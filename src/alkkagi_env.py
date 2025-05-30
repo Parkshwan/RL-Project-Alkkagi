@@ -1,0 +1,164 @@
+import gym
+from gym import spaces
+import numpy as np
+import pymunk
+import pymunk.pygame_util
+import pygame
+import math
+
+class AlkkagiEnv(gym.Env):
+    metadata = {'render.modes': ['human']}
+
+    def __init__(self):
+        super(AlkkagiEnv, self).__init__()
+        self.screen_width = 600
+        self.screen_height = 600
+        self.agent_radius = 15
+
+        self.num_discs = 2  # agent 1개, opponent 1개
+        self.discs = []
+
+        # 관측 공간: 각 디스크의 (x, y, vx, vy) 정규화됨
+        self.observation_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(self.num_discs * 4,), dtype=np.float32
+        )
+
+        # 행동 공간: 방향 벡터 (x, y), 값 범위 [-1, 1]
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+
+        # pymunk physics
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 0)
+
+        # pygame rendering
+        self.screen = None
+        self.clock = None
+        self.draw_options = None
+
+        # self.reset()
+
+    def _add_disc(self, position):
+        mass = 1
+        radius = self.agent_radius
+        inertia = pymunk.moment_for_circle(mass, 0, radius)
+        body = pymunk.Body(mass, inertia)
+        body.position = position
+        shape = pymunk.Circle(body, radius)
+        shape.elasticity = 0.9
+        shape.friction = 0.2
+        self.space.add(body, shape)
+        self.discs.append(body)
+
+    def _remove_out_of_bounds_discs(self):
+        new_discs = []
+        for disc in self.discs:
+            x, y = disc.position
+            if 0 <= x <= self.screen_width and 0 <= y <= self.screen_height:
+                new_discs.append(disc)
+            else:
+                for shape in disc.shapes:
+                    self.space.remove(shape)
+                self.space.remove(disc)
+        self.discs = new_discs
+
+    def reset(self):
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 0)
+        self.discs = []
+
+        # 디스크 배치
+        self._add_disc((self.screen_width // 2 + self.agent_radius, self.screen_height - 100))  # agent
+        self._add_disc((self.screen_width // 2, 100))                        # opponent
+
+        print("INIT POSITIONS")
+        for d in self.discs:
+            print(d.position)
+
+        return self._get_obs()
+
+    def step(self, action):
+        direction = np.clip(action, -1, 1)
+        if np.linalg.norm(direction) > 1e-6:
+            direction = direction / np.linalg.norm(direction)
+        else:
+            direction = np.array([0.0, -1.0])  # 기본 방향
+
+        force = tuple(direction)
+        agent_disc = self.discs[0]
+        agent_disc.apply_impulse_at_local_point(force, (0, 0))
+
+        print("Position Check")
+        for d in self.discs:
+            print(d.position)
+        print("Force Check")
+        print(f"Action: {action}, Force: {force}")
+
+        for _ in range(200):
+            self.space.step(1 / 6000.0)
+
+        self._remove_out_of_bounds_discs()
+
+        obs = self._get_obs()
+        reward = self._compute_reward()
+        done = self._check_done()
+        return obs, reward, done, {}
+
+    def _get_obs(self):
+        obs = []
+        for disc in self.discs:
+            pos = disc.position
+            vel = disc.velocity
+            obs.extend([
+                (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
+                (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
+                vel[0] / 1000,
+                vel[1] / 1000
+            ])
+        # 패딩: 디스크가 사라졌을 경우 0으로 채움
+        while len(obs) < self.num_discs * 4:
+            obs.extend([0.0, 0.0, 0.0, 0.0])
+        return np.array(obs, dtype=np.float32)
+
+    def _compute_reward(self):
+        # 상대 디스크가 사라졌으면 보상
+        if len(self.discs) < 2:
+            return 1.0
+        return 0.0
+
+    def _check_done(self):
+        if len(self.discs) < 2:
+            return True
+        # for disc in self.discs:
+        #     if disc.velocity.length > 5:
+        #         return False
+        return False
+
+    def render(self, mode='human'):
+        if self.screen is None:
+            pygame.init()
+            self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+            self.clock = pygame.time.Clock()
+            self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+        self.screen.fill((255, 255, 255))
+
+        # 보드 경계 사각형 그리기
+        pygame.draw.rect(
+            self.screen,
+            (220, 220, 220),
+            pygame.Rect(0, 0, self.screen_width, self.screen_height),
+            width=5
+        )
+
+        self.space.debug_draw(self.draw_options)
+        pygame.display.flip()
+        self.clock.tick(60)
+
+    def close(self):
+        if self.screen:
+            pygame.quit()
