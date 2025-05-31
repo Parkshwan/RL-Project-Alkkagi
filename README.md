@@ -16,4 +16,16 @@ pip install -r requirements.txt
 python src/env_simulation.py
 ```
 
-##
+## Description
+
+### Environment
+- Alkkagi_Env(num_agent_discs: int = 1, num_opponent_discs: int = 1)
+- action space: [discs' index, x, y]
+direction of force will be decided by x and y
+- observation space: (x, y, vx, vy) * _(num_agent + num_opponent)_
+x, y is position of disc and vx, vy is velocity of disc. Each disc has information of position and velocity as a environment
+you can get current observation with using env._get_obs()
+
+### Test simulation
+- Start with 4 of discs each other
+- every step, agent's disc go up slightly. after remove all opponent's discs, the simulation will be end.
