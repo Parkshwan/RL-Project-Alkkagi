@@ -159,7 +159,7 @@ class AlkkagiEnv(gym.Env):
 
     def _compute_reward(self, agent_before, opponent_before):
         # reward = num(removed opponent) - num(removed agent)
-        return len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs)
+        return - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
 
     def _check_done(self):
         return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
