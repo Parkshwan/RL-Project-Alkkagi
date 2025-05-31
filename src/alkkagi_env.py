@@ -30,6 +30,9 @@ class AlkkagiEnv(gym.Env):
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
 
+        # 공간 전체에 약한 감속 적용
+        self.space.damping = 0.9  # 1.0이면 감속 없음
+
         # pygame rendering
         self.screen = None
         self.clock = None
@@ -45,7 +48,6 @@ class AlkkagiEnv(gym.Env):
         body.position = position
         shape = pymunk.Circle(body, radius)
         shape.elasticity = 0.9
-        shape.friction = 0.2
         self.space.add(body, shape)
         self.discs.append(body)
 
@@ -60,19 +62,28 @@ class AlkkagiEnv(gym.Env):
                     self.space.remove(shape)
                 self.space.remove(disc)
         self.discs = new_discs
+    
+    def _all_discs_stopped(self, threshold=5.0):
+        all_stopped = True
+        for disc in self.discs:
+            speed = disc.velocity.length
+            # print(disc.velocity.length)
+            if speed < threshold:
+                # threshold 이하이면 속도를 0으로 만들어 정지시킴
+                disc.velocity = pymunk.Vec2d(0, 0)
+                disc.angular_velocity = 0
+            else:
+                all_stopped = False
+        return all_stopped
 
     def reset(self):
-        self.space = pymunk.Space()
-        self.space.gravity = (0, 0)
+        # self.space = pymunk.Space()
+        # self.space.gravity = (0, 0)
         self.discs = []
 
         # 디스크 배치
         self._add_disc((self.screen_width // 2 + self.agent_radius, self.screen_height - 100))  # agent
         self._add_disc((self.screen_width // 2, 100))                        # opponent
-
-        print("INIT POSITIONS")
-        for d in self.discs:
-            print(d.position)
 
         return self._get_obs()
 
@@ -83,18 +94,15 @@ class AlkkagiEnv(gym.Env):
         else:
             direction = np.array([0.0, -1.0])  # 기본 방향
 
-        force = tuple(direction)
+        force = tuple(direction * 25)
         agent_disc = self.discs[0]
         agent_disc.apply_impulse_at_local_point(force, (0, 0))
 
-        print("Position Check")
-        for d in self.discs:
-            print(d.position)
-        print("Force Check")
-        print(f"Action: {action}, Force: {force}")
-
-        for _ in range(200):
-            self.space.step(1 / 6000.0)
+        while True:
+            self.space.step(1 / 60.0)
+            self._remove_out_of_bounds_discs()
+            if self._all_discs_stopped(threshold=0.1):
+                break
 
         self._remove_out_of_bounds_discs()
 

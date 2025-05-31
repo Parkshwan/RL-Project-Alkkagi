@@ -12,9 +12,9 @@ step = 1
 
 while not done:
     env.render()
-    print(f"step: {step}")
     obs, reward, done, _ = env.step(np.array([0.0, 0.0]))
-    time.sleep(0.01)
+    print(f"step: {step}, IsDone: {done}")
+    time.sleep(1)
     step += 1
 
 print("최종 보상:", reward)
