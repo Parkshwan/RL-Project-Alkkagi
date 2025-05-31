@@ -9,22 +9,27 @@ import math
 class AlkkagiEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, num_agent_discs=1, num_opponent_discs=1):
         super(AlkkagiEnv, self).__init__()
         self.screen_width = 600
         self.screen_height = 600
         self.agent_radius = 15
 
-        self.num_discs = 2  # agent 1개, opponent 1개
+        self.num_agent_discs = num_agent_discs
+        self.num_opponent_discs = num_opponent_discs
         self.discs = []
+        self.agent_discs = []
+        self.opponent_discs = []
 
-        # 관측 공간: 각 디스크의 (x, y, vx, vy) 정규화됨
+        # 관측 공간: (x, y, vx, vy) * (num_agent + num_opponent)
         self.observation_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.num_discs * 4,), dtype=np.float32
+            low=-1.0, high=1.0,
+            shape=((num_agent_discs + num_opponent_discs) * 4,),
+            dtype=np.float32
         )
 
-        # 행동 공간: 방향 벡터 (x, y), 값 범위 [-1, 1]
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+         # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정 (x, y 방향)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)  # (디스크 인덱스, x, y)
 
         # pymunk physics
         self.space = pymunk.Space()
@@ -50,6 +55,8 @@ class AlkkagiEnv(gym.Env):
         shape.elasticity = 0.9
         self.space.add(body, shape)
         self.discs.append(body)
+
+        return body
 
     def _remove_out_of_bounds_discs(self):
         new_discs = []
@@ -77,13 +84,22 @@ class AlkkagiEnv(gym.Env):
         return all_stopped
 
     def reset(self):
-        # self.space = pymunk.Space()
-        # self.space.gravity = (0, 0)
-        self.discs = []
+        spacing = 2 * self.agent_radius + 5
 
-        # 디스크 배치
-        self._add_disc((self.screen_width // 2 + self.agent_radius, self.screen_height - 100))  # agent
-        self._add_disc((self.screen_width // 2, 100))                        # opponent
+
+        # Add agent's discs
+        for i in range(self.num_agent_discs):
+            x = self.screen_width // 2 + (i - self.num_agent_discs // 2) * spacing
+            y = self.screen_height - 100
+            disc = self._add_disc((x, y)) # add to discs list
+            self.agent_discs.append(disc) # add to agent_discs list
+        
+        # Add opponent's discs
+        for i in range(self.num_opponent_discs):
+            x = self.screen_width // 2 + (i - self.num_opponent_discs // 2) * spacing
+            y = 100
+            disc = self._add_disc((x, y))
+            self.opponent_discs.append(disc)
 
         return self._get_obs()
 
@@ -123,7 +139,7 @@ class AlkkagiEnv(gym.Env):
                 vel[1] / 1000
             ])
         # 패딩: 디스크가 사라졌을 경우 0으로 채움
-        while len(obs) < self.num_discs * 4:
+        while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 4:
             obs.extend([0.0, 0.0, 0.0, 0.0])
         return np.array(obs, dtype=np.float32)
 
