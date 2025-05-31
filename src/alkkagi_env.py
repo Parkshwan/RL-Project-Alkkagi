@@ -86,7 +86,6 @@ class AlkkagiEnv(gym.Env):
     def reset(self):
         spacing = 2 * self.agent_radius + 5
 
-
         # Add agent's discs
         for i in range(self.num_agent_discs):
             x = self.screen_width // 2 + (i - self.num_agent_discs // 2) * spacing
@@ -104,14 +103,19 @@ class AlkkagiEnv(gym.Env):
         return self._get_obs()
 
     def step(self, action):
-        direction = np.clip(action, -1, 1)
+        disc_index = int(np.clip(action[0], 0, len(self.agent_discs) - 1))
+        direction = np.clip(action[1:], -1, 1)
+
         if np.linalg.norm(direction) > 1e-6:
             direction = direction / np.linalg.norm(direction)
         else:
             direction = np.array([0.0, -1.0])  # 기본 방향
 
+        agent_before = len(self.agent_discs)
+        opponent_before = len(self.opponent_discs)
+
         force = tuple(direction * 25)
-        agent_disc = self.discs[0]
+        agent_disc = self.agent_discs[disc_index]
         agent_disc.apply_impulse_at_local_point(force, (0, 0))
 
         while True:
@@ -119,11 +123,14 @@ class AlkkagiEnv(gym.Env):
             self._remove_out_of_bounds_discs()
             if self._all_discs_stopped(threshold=0.1):
                 break
+        
+        # TODO
+        # Opponent's action with policy
 
         self._remove_out_of_bounds_discs()
 
         obs = self._get_obs()
-        reward = self._compute_reward()
+        reward = self._compute_reward(agent_before, opponent_before)
         done = self._check_done()
         return obs, reward, done, {}
 
@@ -143,19 +150,12 @@ class AlkkagiEnv(gym.Env):
             obs.extend([0.0, 0.0, 0.0, 0.0])
         return np.array(obs, dtype=np.float32)
 
-    def _compute_reward(self):
-        # 상대 디스크가 사라졌으면 보상
-        if len(self.discs) < 2:
-            return 1.0
-        return 0.0
+    def _compute_reward(self, agent_before, opponent_before):
+        # reward = num(removed opponent) - num(removed agent)
+        return len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs)
 
     def _check_done(self):
-        if len(self.discs) < 2:
-            return True
-        # for disc in self.discs:
-        #     if disc.velocity.length > 5:
-        #         return False
-        return False
+        return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
 
     def render(self, mode='human'):
         if self.screen is None:
