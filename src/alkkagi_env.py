@@ -68,6 +68,13 @@ class AlkkagiEnv(gym.Env):
                 for shape in disc.shapes:
                     self.space.remove(shape)
                 self.space.remove(disc)
+
+                # remove disc in agent/opponent list
+                if disc in self.agent_discs:
+                    self.agent_discs.remove(disc)
+                elif disc in self.opponent_discs:
+                    self.opponent_discs.remove(disc)
+                    
         self.discs = new_discs
     
     def _all_discs_stopped(self, threshold=5.0):
