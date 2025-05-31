@@ -22,8 +22,8 @@ python src/env_simulation.py
 - Alkkagi_Env(num_agent_discs: int = 1, num_opponent_discs: int = 1)
 - action space: [discs' index, x, y]
 direction of force will be decided by x and y
-- observation space: (x, y, vx, vy) * _(num_agent + num_opponent)_
-x, y is position of disc and vx, vy is velocity of disc. Each disc has information of position and velocity as a environment
+- observation space: Tuple((x, y, team) * _(num_agent + num_opponent)_)
+x, y is position of disc and team information of disc. Each disc has information of position and team as a environment
 you can get current observation with using env._get_obs()
 
 ### Test simulation
