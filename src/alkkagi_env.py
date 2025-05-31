@@ -21,12 +21,14 @@ class AlkkagiEnv(gym.Env):
         self.agent_discs = []
         self.opponent_discs = []
 
-        # 관측 공간: (x, y, vx, vy) * (num_agent + num_opponent)
-        self.observation_space = spaces.Box(
-            low=-1.0, high=1.0,
-            shape=((num_agent_discs + num_opponent_discs) * 4,),
-            dtype=np.float32
+        # 관측 공간: (x, y, team) * (num_agent + num_opponent)
+        single_space = spaces.Tuple(
+            (
+                spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32), # pos
+                spaces.Discrete(3) # 0 agent, 1 opponent, 2 outed
+            )
         )
+        self.observation_space = spaces.Tuple([single_space] * (self.num_agent_discs + self.num_opponent_discs))
 
          # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정 (x, y 방향)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)  # (디스크 인덱스, x, y)
@@ -145,16 +147,17 @@ class AlkkagiEnv(gym.Env):
         obs = []
         for disc in self.discs:
             pos = disc.position
-            vel = disc.velocity
-            obs.extend([
-                (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
-                (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                vel[0] / 1000,
-                vel[1] / 1000
-            ])
-        # 패딩: 디스크가 사라졌을 경우 0으로 채움
-        while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 4:
-            obs.extend([0.0, 0.0, 0.0, 0.0])
+            team = 1 if disc in self.agent_discs else 0
+            obs.extend(
+                [
+                    (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
+                    (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
+                    team
+                ]
+            )
+        # 패딩: 디스크가 사라졌을 경우 0으로 채움 -> observation space 크기 유지
+        while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
+            obs.extend([0.0, 0.0, 2])
         return np.array(obs, dtype=np.float32)
 
     def _compute_reward(self, agent_before, opponent_before):
