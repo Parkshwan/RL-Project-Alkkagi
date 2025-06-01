@@ -30,15 +30,20 @@ class AlkkagiEnv(gym.Env):
         )
         self.observation_space = spaces.Tuple([single_space] * (self.num_agent_discs + self.num_opponent_discs))
 
-         # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정 (x, y 방향)
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)  # (디스크 인덱스, x, y)
+        # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정
+        self.action_space = spaces.Tuple(
+            (
+                spaces.Discrete(self.num_agent_discs), # disc index
+                spaces.Box(low=-1000.0, high=1000.0, shape=(2,), dtype=np.float32)  # (x, y) 방향 힘
+            )
+        )
 
         # pymunk physics
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
 
         # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.9  # 1.0이면 감속 없음
+        self.space.damping = 0.6  # 1.0이면 감속 없음
 
         # pygame rendering
         self.screen = None
@@ -54,7 +59,7 @@ class AlkkagiEnv(gym.Env):
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
-        shape.elasticity = 0.9
+        shape.elasticity = 0.7
         self.space.add(body, shape)
         self.discs.append(body)
 
@@ -93,6 +98,17 @@ class AlkkagiEnv(gym.Env):
         return all_stopped
 
     def reset(self):
+        # pymunk physics
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 0)
+
+        # 공간 전체에 약한 감속 적용
+        self.space.damping = 0.6  # 1.0이면 감속 없음
+
+        self.discs = []
+        self.agent_discs = []
+        self.opponent_discs = []
+
         spacing = 2 * self.agent_radius + 5
 
         # Add agent's discs
@@ -113,17 +129,11 @@ class AlkkagiEnv(gym.Env):
 
     def step(self, action):
         disc_index = int(np.clip(action[0], 0, len(self.agent_discs) - 1))
-        direction = np.clip(action[1:], -1, 1)
-
-        if np.linalg.norm(direction) > 1e-6:
-            direction = direction / np.linalg.norm(direction)
-        else:
-            direction = np.array([0.0, -1.0])  # 기본 방향
+        force = (action[1], action[2])
 
         agent_before = len(self.agent_discs)
         opponent_before = len(self.opponent_discs)
 
-        force = tuple(direction * 25)
         agent_disc = self.agent_discs[disc_index]
         agent_disc.apply_impulse_at_local_point(force, (0, 0))
 
