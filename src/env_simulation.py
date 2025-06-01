@@ -6,16 +6,28 @@ env = AlkkagiEnv(num_agent_discs=4, num_opponent_discs= 4)
 obs = env.reset()
 
 action = np.array([0, 0.0, 0.0])  # 위쪽으로 힘 가함
-obs, reward, done, _ = env.step(action)
+obs, reward, done, _ = env.step(action, 0)
 
 step = 1
-
+env.render()
+time.sleep(1)
 while not done:
-    env.render()
-    obs, reward, done, _ = env.step(np.array([0, 0.0, 0.0]))
-    print(f"step: {step}, IsDone: {done}")
-    time.sleep(1)
+    # agent turn
+    obs, reward, done, _ = env.step(np.array([0, 0, -0.3]), 0)
+    print(f"step: {step}, IsDone: {done}, reward: {reward}")
     step += 1
+    env.render()
+    time.sleep(1)
+    
+    if done:
+         break
+
+    # opponent turn
+    obs, reward, done, _ = env.step(np.array([0, 0, 0.1]), 1)
+    print(f"step: {step}, IsDone: {done}, reward: {reward}")
+    step += 1
+    env.render()
+    time.sleep(1)
 
 print("최종 보상:", reward)
 env.close()
