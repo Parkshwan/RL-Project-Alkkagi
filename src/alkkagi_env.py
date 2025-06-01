@@ -128,35 +128,39 @@ class AlkkagiEnv(gym.Env):
 
         return self._get_obs()
 
-    def step(self, action):
+    def step(self, action, who):
+        # whose turn?
+        if who == 0:
+            moving_discs = self.agent_discs
+        else:
+            moving_discs = self.opponent_discs
+        
         disc_index = int(action[0])
         force = (
             np.clip(action[1], -1, 1) * self.max_force,
             np.clip(action[2], -1, 1) * self.max_force
         )
 
-        if disc_index >= len(self.agent_discs) or disc_index < 0:
+        # if invalid index input, just ignore
+        if disc_index >= len(moving_discs) or disc_index < 0:
             obs   = self._get_obs()
             reward = -1.0
             done   = False
             info   = {"invalid_action": True,
-                        "action_mask": self._action_mask()}   # ⬅︎(3)번
+                        "action_mask": self._action_mask()}
             return obs, reward, done, info
 
         agent_before = len(self.agent_discs)
         opponent_before = len(self.opponent_discs)
 
-        agent_disc = self.agent_discs[disc_index]
-        agent_disc.apply_impulse_at_local_point(force, (0, 0))
+        moving_disc = moving_discs[disc_index]
+        moving_disc.apply_impulse_at_local_point(force, (0, 0))
 
         while True:
             self.space.step(1 / 60.0)
             self._remove_out_of_bounds_discs()
             if self._all_discs_stopped(threshold=0.1):
                 break
-        
-        # TODO
-        # Opponent's action with policy
 
         self._remove_out_of_bounds_discs()
 
@@ -164,6 +168,7 @@ class AlkkagiEnv(gym.Env):
         reward = self._compute_reward(agent_before, opponent_before)
         done = self._check_done()
         info = {"action_mask": self._action_mask()}
+        
         return obs, reward, done, info
 
     def _get_obs(self):
