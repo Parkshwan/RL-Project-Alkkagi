@@ -14,6 +14,7 @@ class AlkkagiEnv(gym.Env):
         self.screen_width = 600
         self.screen_height = 600
         self.agent_radius = 15
+        self.max_force = 1000
 
         self.num_agent_discs = num_agent_discs
         self.num_opponent_discs = num_opponent_discs
@@ -30,15 +31,20 @@ class AlkkagiEnv(gym.Env):
         )
         self.observation_space = spaces.Tuple([single_space] * (self.num_agent_discs + self.num_opponent_discs))
 
-         # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정 (x, y 방향)
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)  # (디스크 인덱스, x, y)
+        # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정
+        self.action_space = spaces.Tuple(
+            (
+                spaces.Discrete(self.num_agent_discs), # disc index
+                spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # (x, y) 방향 힘 (before scaling)
+            )
+        )
 
         # pymunk physics
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
 
         # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.9  # 1.0이면 감속 없음
+        self.space.damping = 0.6  # 1.0이면 감속 없음
 
         # pygame rendering
         self.screen = None
@@ -54,7 +60,7 @@ class AlkkagiEnv(gym.Env):
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
-        shape.elasticity = 0.9
+        shape.elasticity = 0.7
         self.space.add(body, shape)
         self.discs.append(body)
 
@@ -93,6 +99,17 @@ class AlkkagiEnv(gym.Env):
         return all_stopped
 
     def reset(self):
+        # pymunk physics
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 0)
+
+        # 공간 전체에 약한 감속 적용
+        self.space.damping = 0.6  # 1.0이면 감속 없음
+
+        self.discs = []
+        self.agent_discs = []
+        self.opponent_discs = []
+
         spacing = 2 * self.agent_radius + 5
 
         # Add agent's discs
@@ -111,37 +128,48 @@ class AlkkagiEnv(gym.Env):
 
         return self._get_obs()
 
-    def step(self, action):
-        disc_index = int(np.clip(action[0], 0, len(self.agent_discs) - 1))
-        direction = np.clip(action[1:], -1, 1)
-
-        if np.linalg.norm(direction) > 1e-6:
-            direction = direction / np.linalg.norm(direction)
+    def step(self, action, who):
+        # whose turn?
+        if who == 0:
+            moving_discs = self.agent_discs
         else:
-            direction = np.array([0.0, -1.0])  # 기본 방향
+            moving_discs = self.opponent_discs
+        
+        disc_index = int(action[0])
+        force = (
+            np.clip(action[1], -1, 1) * self.max_force,
+            np.clip(action[2], -1, 1) * self.max_force
+        )
+
+        # if invalid index input, just ignore
+        if disc_index >= len(moving_discs) or disc_index < 0:
+            obs   = self._get_obs()
+            reward = -1.0
+            done   = False
+            info   = {"invalid_action": True,
+                        "action_mask": self._action_mask()}
+            return obs, reward, done, info
 
         agent_before = len(self.agent_discs)
         opponent_before = len(self.opponent_discs)
 
-        force = tuple(direction * 25)
-        agent_disc = self.agent_discs[disc_index]
-        agent_disc.apply_impulse_at_local_point(force, (0, 0))
+        moving_disc = moving_discs[disc_index]
+        moving_disc.apply_impulse_at_local_point(force, (0, 0))
 
         while True:
             self.space.step(1 / 60.0)
             self._remove_out_of_bounds_discs()
             if self._all_discs_stopped(threshold=0.1):
                 break
-        
-        # TODO
-        # Opponent's action with policy
 
         self._remove_out_of_bounds_discs()
 
         obs = self._get_obs()
         reward = self._compute_reward(agent_before, opponent_before)
         done = self._check_done()
-        return obs, reward, done, {}
+        info = {"action_mask": self._action_mask()}
+        
+        return obs, reward, done, info
 
     def _get_obs(self):
         obs = []
@@ -159,7 +187,12 @@ class AlkkagiEnv(gym.Env):
         while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
             obs.extend([0.0, 0.0, 2])
         return np.array(obs, dtype=np.float32)
-
+    
+    def _action_mask(self):
+        mask = np.zeros(self.num_agent_discs, dtype=bool)
+        mask[:len(self.agent_discs)] = True
+        return mask
+    
     def _compute_reward(self, agent_before, opponent_before):
         # reward = num(removed opponent) - num(removed agent)
         return - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
