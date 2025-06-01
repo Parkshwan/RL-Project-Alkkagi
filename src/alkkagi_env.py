@@ -14,6 +14,7 @@ class AlkkagiEnv(gym.Env):
         self.screen_width = 600
         self.screen_height = 600
         self.agent_radius = 15
+        self.max_force = 1000
 
         self.num_agent_discs = num_agent_discs
         self.num_opponent_discs = num_opponent_discs
@@ -34,7 +35,7 @@ class AlkkagiEnv(gym.Env):
         self.action_space = spaces.Tuple(
             (
                 spaces.Discrete(self.num_agent_discs), # disc index
-                spaces.Box(low=-1000.0, high=1000.0, shape=(2,), dtype=np.float32)  # (x, y) 방향 힘
+                spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # (x, y) 방향 힘 (before scaling)
             )
         )
 
@@ -128,8 +129,19 @@ class AlkkagiEnv(gym.Env):
         return self._get_obs()
 
     def step(self, action):
-        disc_index = int(np.clip(action[0], 0, len(self.agent_discs) - 1))
-        force = (action[1], action[2])
+        disc_index = int(action[0])
+        force = (
+            np.clip(action[1], -1, 1) * self.max_force,
+            np.clip(action[2], -1, 1) * self.max_force
+        )
+
+        if disc_index >= len(self.agent_discs) or disc_index < 0:
+            obs   = self._get_obs()
+            reward = -1.0
+            done   = False
+            info   = {"invalid_action": True,
+                        "action_mask": self._action_mask()}   # ⬅︎(3)번
+            return obs, reward, done, info
 
         agent_before = len(self.agent_discs)
         opponent_before = len(self.opponent_discs)
@@ -151,7 +163,8 @@ class AlkkagiEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(agent_before, opponent_before)
         done = self._check_done()
-        return obs, reward, done, {}
+        info = {"action_mask": self._action_mask()}
+        return obs, reward, done, info
 
     def _get_obs(self):
         obs = []
@@ -169,7 +182,12 @@ class AlkkagiEnv(gym.Env):
         while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
             obs.extend([0.0, 0.0, 2])
         return np.array(obs, dtype=np.float32)
-
+    
+    def _action_mask(self):
+        mask = np.zeros(self.num_agent_discs, dtype=bool)
+        mask[:len(self.agent_discs)] = True
+        return mask
+    
     def _compute_reward(self, agent_before, opponent_before):
         # reward = num(removed opponent) - num(removed agent)
         return - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
