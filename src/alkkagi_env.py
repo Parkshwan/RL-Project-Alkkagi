@@ -173,19 +173,34 @@ class AlkkagiEnv(gym.Env):
 
     def _get_obs(self):
         obs = []
-        for disc in self.discs:
+        for disc in self.agent_discs:
             pos = disc.position
-            team = 1 if disc in self.agent_discs else 0
             obs.extend(
                 [
                     (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
                     (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                    team
+                    0
                 ]
             )
-        # 패딩: 디스크가 사라졌을 경우 0으로 채움 -> observation space 크기 유지
+        
+        # padding
+        while len(obs) < self.num_agent_discs * 3:
+            obs.extend([0.0, 0.0, 2])
+        
+        for disc in self.opponent_discs:
+            pos = disc.position
+            obs.extend(
+                [
+                    (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
+                    (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
+                    0
+                ]
+            )
+
+        # padding
         while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
             obs.extend([0.0, 0.0, 2])
+
         return np.array(obs, dtype=np.float32)
     
     def _action_mask(self):
