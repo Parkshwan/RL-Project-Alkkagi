@@ -6,3 +6,4 @@ numpy==2.2.6
 pycparser==2.22
 pygame==2.6.1
 pymunk==7.0.0
+torch==2.7.0
