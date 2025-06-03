@@ -237,7 +237,21 @@ class AlkkagiEnv(gym.Env):
             width=5
         )
 
-        self.space.debug_draw(self.draw_options)
+        for body in self.agent_discs:
+            for shape in body.shapes:
+                if isinstance(shape, pymunk.Circle):
+                    pos = int(body.position.x), int(body.position.y)
+                    radius = int(shape.radius)
+                    color = (255, 0, 0)
+                    pygame.draw.circle(self.screen, color, pos, radius)
+        for body in self.opponent_discs:
+            for shape in body.shapes:
+                if isinstance(shape, pymunk.Circle):
+                    pos = int(body.position.x), int(body.position.y)
+                    radius = int(shape.radius)
+
+                    color = (0, 0, 0)
+                    pygame.draw.circle(self.screen, color, pos, radius)
         pygame.display.flip()
         self.clock.tick(60)
 
