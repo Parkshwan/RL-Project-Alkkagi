@@ -78,7 +78,7 @@ for ep in range(1, args.episodes + 1):
         if opp is not None:
             obs, r_opp, done, info = env.step(opp, who=1)
             obs = obs.flatten()
-            tot_r -= r_opp
+            tot_r += r_opp
         env.render(); time.sleep(1)     # 경기 결과 화면 1초 유지
     
     print(f"→ total return {tot_r:.1f}")

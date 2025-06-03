@@ -47,7 +47,7 @@ for ep in range(1, EPISODES + 1):
             if opp is not None:
                 nxt_state, opp_r, done, info = env.step(opp, who=1)
                 nxt_state = nxt_state.flatten()
-                reward -= opp_r          # 상대가 득점 → 내 보상 감소
+                reward += opp_r          # 상대가 득점 → 내 보상 감소
 
         agent.push(state, a_idx, a_cont, reward,
                    nxt_state, done, info["action_mask"])
