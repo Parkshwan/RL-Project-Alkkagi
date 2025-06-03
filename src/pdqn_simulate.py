@@ -80,6 +80,9 @@ for ep in range(1, args.episodes + 1):
             obs = obs.flatten()
             tot_r += r_opp
         env.render(); time.sleep(1)     # 경기 결과 화면 1초 유지
+
+        if done:
+            break
     
     print(f"→ total return {tot_r:.1f}")
 
