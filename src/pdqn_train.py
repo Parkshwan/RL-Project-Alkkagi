@@ -5,7 +5,7 @@ from pdqn_agent import PDQNAgent
 # ───────────────────────── 하이퍼파라미터
 SEED            = 2025
 NUM_DISC        = 4            # 에이전트와 상대 디스크 수 (동일)
-EPISODES        = 1000
+EPISODES        = 5000
 MAX_AGENT_TURN  = 60           # agent 턴 step 제한
 EPS_START, EPS_END, EPS_GAMMA = 1.0, 0.05, 0.995
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -47,10 +47,10 @@ for ep in range(1, EPISODES + 1):
             if opp is not None:
                 nxt_state, opp_r, done, info = env.step(opp, who=1)
                 nxt_state = nxt_state.flatten()
-                reward += opp_r          # 상대가 득점 → 내 보상 감소
 
         agent.push(state, a_idx, a_cont, reward,
-                   nxt_state, done, info["action_mask"])
+                   nxt_state, done, info["action_mask"]) # push for what?
+        
         agent.learn()
 
         state, total_r = nxt_state, total_r + reward
