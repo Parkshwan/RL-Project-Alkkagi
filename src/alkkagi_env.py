@@ -143,7 +143,9 @@ class AlkkagiEnv(gym.Env):
 
         # if invalid index input, just ignore
         if disc_index >= len(moving_discs) or disc_index < 0:
-            print("INVALID CHOICE FLAG")
+            if who == 1:
+                print("INVALID CHOICE FLAG")
+                print(disc_index)
             obs   = self._get_obs()
             reward = -1.0
             done   = False
@@ -169,7 +171,7 @@ class AlkkagiEnv(gym.Env):
         reward = self._compute_reward(agent_before, opponent_before)
         done = self._check_done()
         mask = np.zeros(self.num_agent_discs, dtype=bool)
-        mask[:len(self.agent_discs)] = True
+        mask[:len(self.opponent_discs)] = True
         info = {"action_mask": mask} # it should be opponent's action mask?
         
         return obs, reward, done, info
