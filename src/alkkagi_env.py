@@ -22,7 +22,7 @@ class AlkkagiEnv(gym.Env):
         self.discs = []
         self.agent_discs = []
         self.opponent_discs = []
-
+        
         # 관측 공간: (x, y, team) * (num_agent + num_opponent)
         single_space = spaces.Tuple(
             (
@@ -61,6 +61,7 @@ class AlkkagiEnv(gym.Env):
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
+        # shape.friction = 0.5
         shape.elasticity = 0.5
         self.space.add(body, shape)
         self.discs.append(body)
@@ -248,12 +249,15 @@ class AlkkagiEnv(gym.Env):
     def _check_done(self):
         return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
 
-    def render(self, mode='human'):
+    def render(self):
         if self.screen is None:
             pygame.init()
             self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
             self.clock = pygame.time.Clock()
             self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
+            
+            self.board_img = pygame.image.load("img.png").convert()
+            self.board_img = pygame.transform.scale(self.board_img, (self.screen_width, self.screen_height))
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -261,6 +265,7 @@ class AlkkagiEnv(gym.Env):
                 exit()
 
         self.screen.fill((255, 255, 255))
+        self.screen.blit(self.board_img, (0, 0))
 
         # 보드 경계 사각형 그리기
         pygame.draw.rect(
@@ -275,7 +280,7 @@ class AlkkagiEnv(gym.Env):
                 if isinstance(shape, pymunk.Circle):
                     pos = int(body.position.x), int(body.position.y)
                     radius = int(shape.radius)
-                    color = (255, 0, 0)
+                    color = (0, 0, 0)
                     pygame.draw.circle(self.screen, color, pos, radius)
         for body in self.opponent_discs:
             for shape in body.shapes:
@@ -283,7 +288,7 @@ class AlkkagiEnv(gym.Env):
                     pos = int(body.position.x), int(body.position.y)
                     radius = int(shape.radius)
 
-                    color = (0, 0, 0)
+                    color = (230, 230, 230)
                     pygame.draw.circle(self.screen, color, pos, radius)
         pygame.display.flip()
         self.clock.tick(60)
