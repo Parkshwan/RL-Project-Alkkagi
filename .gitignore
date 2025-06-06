@@ -1,4 +1,5 @@
 Proj-Alkkagi/
+venv/
 
 __pycache__/
 *.pyc
