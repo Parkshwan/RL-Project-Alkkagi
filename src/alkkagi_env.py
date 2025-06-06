@@ -160,6 +160,7 @@ class AlkkagiEnv(gym.Env):
         moving_disc.apply_impulse_at_local_point(force, (0, 0))
 
         while True:
+            self.render()
             self.space.step(1 / 60.0)
             self._remove_out_of_bounds_discs()
             if self._all_discs_stopped(threshold=0.1):
