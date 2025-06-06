@@ -18,9 +18,9 @@ args = parser.parse_args()
 DEVICE = "cuda" if (args.gpu and torch.cuda.is_available()) else "cpu"
 
 # ───────────────────────── Env & NN 로드
-NUM_DISC = 4
+NUM_DISC = 5
 env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
-obs_dim = env.reset().size   # flatten() 전 길이
+obs_dim = env.reset(random=False).size   # flatten() 전 길이
 
 actor  = Actor(obs_dim, NUM_DISC).to(DEVICE).eval()
 critic = Critic(obs_dim, NUM_DISC).to(DEVICE).eval()
@@ -57,18 +57,18 @@ def naive_opponent(mask):
 
 # ───────────────────────── Simulation Loop
 for ep in range(1, args.episodes + 1):
-    obs = env.reset().flatten()
+    obs = env.reset(random=False).flatten()
     done, tot_r = False, 0.0
     print(f"\n===== Match {ep} =====")
-    env.render(); time.sleep(1)
+    env.render()
     
     while not done:
         mask = env.get_action_mask(0)
         a_idx, a_cont = greedy_action(obs, mask)
-        obs, r, done, info = env.step(np.array([a_idx, *a_cont]), who=0)
+        obs, r, done, info = env.step(np.array([a_idx, *a_cont]), 0, True)
         obs = obs.flatten()
-        tot_r += r
-        time.sleep(1)     # 경기 결과 화면 1초 유지
+        print(f"agent: {r}")
+        time.sleep(3)
         
         if done:
             break
@@ -76,9 +76,10 @@ for ep in range(1, args.episodes + 1):
         # 간단한 상대 수
         opp = naive_opponent(env.get_action_mask(1))
         if opp is not None:
-            obs, r_opp, done, info = env.step(opp, who=1)
+            obs, r_opp, done, info = env.step(opp, 1, True)
             obs = obs.flatten()
-        time.sleep(1)     # 경기 결과 화면 1초 유지
+            print(f"opponent: {r_opp}")
+        time.sleep(3)
 
         if done:
             break

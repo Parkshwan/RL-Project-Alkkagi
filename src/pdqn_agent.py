@@ -10,7 +10,7 @@ Transition = namedtuple(
 
 # ───────────────────────── Replay Buffer
 class ReplayBuffer:
-    def __init__(self, capacity=200_000):
+    def __init__(self, capacity=5000):
         self.buf = deque(maxlen=capacity)
     def push(self, *args): self.buf.append(Transition(*args))
     def sample(self, batch_size):

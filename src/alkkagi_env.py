@@ -5,6 +5,7 @@ import pymunk
 import pymunk.pygame_util
 import pygame
 import math
+import random
 
 class AlkkagiEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -44,7 +45,7 @@ class AlkkagiEnv(gym.Env):
         self.space.gravity = (0, 0)
 
         # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.6  # 1.0이면 감속 없음
+        self.space.damping = 0.2  # 1.0이면 감속 없음
 
         # pygame rendering
         self.screen = None
@@ -60,7 +61,7 @@ class AlkkagiEnv(gym.Env):
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
-        shape.elasticity = 0.7
+        shape.elasticity = 0.5
         self.space.add(body, shape)
         self.discs.append(body)
 
@@ -98,37 +99,57 @@ class AlkkagiEnv(gym.Env):
                 all_stopped = False
         return all_stopped
 
-    def reset(self):
+    def _random_pos(self, y_low: int, y_high: int, placed: list[tuple[int, int]]):
+        r = self.agent_radius
+        margin = 2
+        max_try = 1000
+        for _ in range(max_try):
+            x = random.randint(r + 5, self.screen_width - r - 5)
+            y = random.randint(y_low + r, y_high - r)
+            if all(math.hypot(x - px, y - py) >= 2 * r + margin for px, py in placed):
+                return x, y
+        raise RuntimeError("디스크 배치 실패: 공간이 부족합니다.")
+
+    def reset(self, random=False):
         # pymunk physics
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
 
         # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.6  # 1.0이면 감속 없음
+        self.space.damping = 0.2  # 1.0이면 감속 없음
 
         self.discs = []
         self.agent_discs = []
         self.opponent_discs = []
+        placed_xy = []
 
-        spacing = 2 * self.agent_radius + 5
+        spacing = 2 * self.agent_radius + 50
 
         # Add agent's discs
         for i in range(self.num_agent_discs):
-            x = self.screen_width // 2 + (i - self.num_agent_discs // 2) * spacing
-            y = self.screen_height - 100
+            if not random:
+                x = self.screen_width // 2 + (i - self.num_agent_discs // 2) * spacing
+                y = self.screen_height - 100
+            else:
+                x, y = self._random_pos(self.screen_height // 2, self.screen_height, placed_xy)
+            placed_xy.append((x, y))
             disc = self._add_disc((x, y)) # add to discs list
             self.agent_discs.append(disc) # add to agent_discs list
         
         # Add opponent's discs
         for i in range(self.num_opponent_discs):
-            x = self.screen_width // 2 + (i - self.num_opponent_discs // 2) * spacing
-            y = 100
+            if not random:
+                x = self.screen_width // 2 + (i - self.num_opponent_discs // 2) * spacing
+                y = 100
+            else:
+                x, y = self._random_pos(0, self.screen_height // 2, placed_xy)
+            placed_xy.append((x, y))
             disc = self._add_disc((x, y))
             self.opponent_discs.append(disc)
 
         return self._get_obs()
 
-    def step(self, action, who):
+    def step(self, action, who, render=False):
         # whose turn?
         if who == 0:
             moving_discs = self.agent_discs
@@ -160,16 +181,17 @@ class AlkkagiEnv(gym.Env):
         moving_disc.apply_impulse_at_local_point(force, (0, 0))
 
         while True:
-            self.render()
+            if render:
+                self.render()
             self.space.step(1 / 60.0)
             self._remove_out_of_bounds_discs()
-            if self._all_discs_stopped(threshold=0.1):
+            if self._all_discs_stopped(threshold=10):
                 break
 
         self._remove_out_of_bounds_discs()
 
         obs = self._get_obs()
-        reward = self._compute_reward(agent_before, opponent_before)
+        reward = self._compute_reward(agent_before, opponent_before, who)
         done = self._check_done()
         mask = self.get_action_mask(who)
         info = {"action_mask": mask}
@@ -217,9 +239,11 @@ class AlkkagiEnv(gym.Env):
             mask[:len(self.opponent_discs)] = True
         return mask
     
-    def _compute_reward(self, agent_before, opponent_before):
-        # reward = num(removed opponent) - num(removed agent)
-        return - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
+    def _compute_reward(self, agent_before, opponent_before, who):
+        reward = - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
+        if who == 1:
+            reward = -reward
+        return reward
 
     def _check_done(self):
         return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
