@@ -150,7 +150,7 @@ class AlkkagiEnv(gym.Env):
             reward = -1.0
             done   = False
             info   = {"invalid_action": True,
-                        "action_mask": self._action_mask()}
+                        "action_mask": self.get_action_mask(who)}
             return obs, reward, done, info
 
         agent_before = len(self.agent_discs)
@@ -170,9 +170,8 @@ class AlkkagiEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(agent_before, opponent_before)
         done = self._check_done()
-        mask = np.zeros(self.num_agent_discs, dtype=bool)
-        mask[:len(self.opponent_discs)] = True
-        info = {"action_mask": mask} # it should be opponent's action mask?
+        mask = self.get_action_mask(who)
+        info = {"action_mask": mask}
         
         return obs, reward, done, info
 
@@ -208,9 +207,13 @@ class AlkkagiEnv(gym.Env):
 
         return np.array(obs, dtype=np.float32)
     
-    def _action_mask(self):
-        mask = np.zeros(self.num_agent_discs, dtype=bool)
-        mask[:len(self.agent_discs)] = True
+    def get_action_mask(self, who):
+        if who == 0:
+           mask = np.zeros(self.num_agent_discs, dtype=bool)
+           mask[:len(self.agent_discs)] = True
+        else:
+            mask = np.zeros(self.num_opponent_discs, dtype=bool)
+            mask[:len(self.opponent_discs)] = True
         return mask
     
     def _compute_reward(self, agent_before, opponent_before):

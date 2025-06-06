@@ -34,7 +34,7 @@ for ep in range(1, EPISODES + 1):
 
     while True:
         # ─ Agent 턴
-        valid = env._action_mask()
+        valid = env.get_action_mask(0)
         a_idx, a_cont = agent.act(state, valid, eps)
         nxt_state, reward, done, info = env.step(
             np.array([a_idx, *a_cont]), who=0
@@ -43,7 +43,7 @@ for ep in range(1, EPISODES + 1):
 
         # ─ Opponent 턴 (optional)
         if not done:
-            opp = naive_opponent(info["action_mask"])
+            opp = naive_opponent(env.get_action_mask(1))
             if opp is not None:
                 nxt_state, opp_r, done, info = env.step(opp, who=1)
                 nxt_state = nxt_state.flatten()

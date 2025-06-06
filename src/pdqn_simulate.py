@@ -63,7 +63,7 @@ for ep in range(1, args.episodes + 1):
     env.render(); time.sleep(1)
     
     while not done:
-        mask = env._action_mask()
+        mask = env.get_action_mask(0)
         a_idx, a_cont = greedy_action(obs, mask)
         obs, r, done, info = env.step(np.array([a_idx, *a_cont]), who=0)
         obs = obs.flatten()
@@ -74,7 +74,7 @@ for ep in range(1, args.episodes + 1):
             break
 
         # 간단한 상대 수
-        opp = naive_opponent(info["action_mask"])
+        opp = naive_opponent(env.get_action_mask(1))
         if opp is not None:
             obs, r_opp, done, info = env.step(opp, who=1)
             obs = obs.flatten()
