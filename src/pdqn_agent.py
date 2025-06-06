@@ -19,7 +19,7 @@ class ReplayBuffer:
     def __len__(self): return len(self.buf)
 
 # ───────────────────────── 네트워크
-def mlp(in_dim, out_dim, hidden=(256, 256)):
+def mlp(in_dim, out_dim, hidden=(64, 64, 64)):
     layers, d = [], in_dim
     for h in hidden:
         layers += [nn.Linear(d, h), nn.ReLU()]
@@ -105,74 +105,75 @@ class PDQNAgent:
         return a_idx, a_cont
 
     def push(self, *args): 
-        from itertools import product
+        # from itertools import product
 
-        def get_transforms():
-            rotations = {
-                0: np.array([[1, 0], [0, 1]]),
-                90: np.array([[0, -1], [1, 0]]),
-                180: np.array([[-1, 0], [0, -1]]),
-                270: np.array([[0, 1], [-1, 0]])
-            }
-            flips = {
-                None: np.eye(2),
-                'x': np.array([[1, 0], [0, -1]]),
-                'y': np.array([[-1, 0], [0, 1]])
-            }
+        # def get_transforms():
+        #     rotations = {
+        #         0: np.array([[1, 0], [0, 1]]),
+        #         90: np.array([[0, -1], [1, 0]]),
+        #         180: np.array([[-1, 0], [0, -1]]),
+        #         270: np.array([[0, 1], [-1, 0]])
+        #     }
+        #     flips = {
+        #         None: np.eye(2),
+        #         'x': np.array([[1, 0], [0, -1]]),
+        #         'y': np.array([[-1, 0], [0, 1]])
+        #     }
 
-            transforms = []
-            for angle, flip_axis in product(rotations.keys(), flips.keys()):
-                R = rotations[angle]
-                F = flips[flip_axis]
-                M = F @ R
-                transforms.append(M)
-            # 중복 제거
-            unique = []
-            seen = set()
-            for M in transforms:
-                key = tuple(M.flatten())
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(M)
-            return unique
+        #     transforms = []
+        #     for angle, flip_axis in product(rotations.keys(), flips.keys()):
+        #         R = rotations[angle]
+        #         F = flips[flip_axis]
+        #         M = F @ R
+        #         transforms.append(M)
+        #     # 중복 제거
+        #     unique = []
+        #     seen = set()
+        #     for M in transforms:
+        #         key = tuple(M.flatten())
+        #         if key not in seen:
+        #             seen.add(key)
+        #             unique.append(M)
+        #     return unique
 
-        def transform_obs_vector(obs_vec, M):
-            """
-            obs_vec: 1D vector of length 30 → (x, y, idx) * 10
-            M: 2x2 transform matrix
-            returns: transformed obs_vec (length 30)
-            """
-            obs_arr = np.asarray(obs_vec).reshape(-1, 3)        # (10, 3)
-            coords = obs_arr[:, :2]                             # (10, 2)
-            idxs = obs_arr[:, 2:]                               # (10, 1)
-            transformed_coords = coords @ M.T                  # (10, 2)
-            transformed_obs = np.hstack([transformed_coords, idxs])
-            return transformed_obs.flatten()
+        # def transform_obs_vector(obs_vec, M):
+        #     """
+        #     obs_vec: 1D vector of length 30 → (x, y, idx) * 10
+        #     M: 2x2 transform matrix
+        #     returns: transformed obs_vec (length 30)
+        #     """
+        #     obs_arr = np.asarray(obs_vec).reshape(-1, 3)        # (10, 3)
+        #     coords = obs_arr[:, :2]                             # (10, 2)
+        #     idxs = obs_arr[:, 2:]                               # (10, 1)
+        #     transformed_coords = coords @ M.T                  # (10, 2)
+        #     transformed_obs = np.hstack([transformed_coords, idxs])
+        #     return transformed_obs.flatten()
 
-        def transform_action_vector(action_vec, M):
-            """
-            action_vec: shape (2,)
-            M: 2x2 matrix
-            returns: transformed action_vec (2,)
-            """
-            action = np.asarray(action_vec).reshape(1, 2)
-            return (action @ M.T).flatten()
+        # def transform_action_vector(action_vec, M):
+        #     """
+        #     action_vec: shape (2,)
+        #     M: 2x2 matrix
+        #     returns: transformed action_vec (2,)
+        #     """
+        #     action = np.asarray(action_vec).reshape(1, 2)
+        #     return (action @ M.T).flatten()
 
-        # Unpack args
-        obs = np.asarray(args[0])     # 1D vector of length 30
-        action = np.asarray(args[2])  # shape (2,)
+        # # Unpack args
+        # obs = np.asarray(args[0])     # 1D vector of length 30
+        # action = np.asarray(args[2])  # shape (2,)
 
-        transforms = get_transforms()
+        # transforms = get_transforms()
 
-        for M in transforms:
-            transformed_obs = transform_obs_vector(obs, M)
-            transformed_action = transform_action_vector(action, M)
+        # for M in transforms:
+        #     transformed_obs = transform_obs_vector(obs, M)
+        #     transformed_action = transform_action_vector(action, M)
 
-            new_args = list(args)
-            new_args[0] = transformed_obs
-            new_args[2] = transformed_action
+        #     new_args = list(args)
+        #     new_args[0] = transformed_obs
+        #     new_args[2] = transformed_action
 
-            self.replay.push(*new_args)
+        #     self.replay.push(*new_args)
+        return self.replay.push(*args)
 
     # 타깃 네트워크 soft-update
     def _soft_update(self, net, tgt):

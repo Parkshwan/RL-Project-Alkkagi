@@ -68,23 +68,25 @@ class AlkkagiEnv(gym.Env):
         return body
 
     def _remove_out_of_bounds_discs(self):
-        new_discs = []
-        for disc in self.discs:
+        # new_discs = []
+        mask = self.get_action_mask_ver2()
+        for idx, disc in enumerate(self.discs):
             x, y = disc.position
             if 0 <= x <= self.screen_width and 0 <= y <= self.screen_height:
-                new_discs.append(disc)
-            else:
+                # new_discs.append(disc)
+                continue
+            elif mask[idx]:
                 for shape in disc.shapes:
                     self.space.remove(shape)
                 self.space.remove(disc)
 
-                # remove disc in agent/opponent list
-                if disc in self.agent_discs:
-                    self.agent_discs.remove(disc)
-                elif disc in self.opponent_discs:
-                    self.opponent_discs.remove(disc)
+                # # remove disc in agent/opponent list
+                # if disc in self.agent_discs:
+                #     self.agent_discs.remove(disc)
+                # elif disc in self.opponent_discs:
+                #     self.opponent_discs.remove(disc)
                     
-        self.discs = new_discs
+        # self.discs = new_discs
     
     def _all_discs_stopped(self, threshold=5.0):
         all_stopped = True
@@ -170,12 +172,16 @@ class AlkkagiEnv(gym.Env):
             obs   = self._get_obs()
             reward = -1.0
             done   = False
-            info   = {"invalid_action": True,
-                        "action_mask": self.get_action_mask(who)}
+            # info   = {"invalid_action": True,
+            #             "action_mask": self.get_action_mask(who)}
+            info = {}
             return obs, reward, done, info
 
-        agent_before = len(self.agent_discs)
-        opponent_before = len(self.opponent_discs)
+        # agent_before = len(self.agent_discs)
+        # opponent_before = len(self.opponent_discs)
+        mask = self.get_action_mask_ver2()
+        agent_before = sum(mask[:self.num_agent_discs])
+        opponent_before = sum(mask[self.num_agent_discs:])
 
         moving_disc = moving_discs[disc_index]
         moving_disc.apply_impulse_at_local_point(force, (0, 0))
@@ -193,13 +199,15 @@ class AlkkagiEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(agent_before, opponent_before, who)
         done = self._check_done()
-        mask = self.get_action_mask(who)
-        info = {"action_mask": mask}
+        # mask = self.get_action_mask(who)
+        # info = {"action_mask": mask}
+        info = {}
         
         return obs, reward, done, info
 
     def _get_obs(self):
         obs = []
+        """
         for disc in self.agent_discs:
             pos = disc.position
             obs.extend(
@@ -212,7 +220,7 @@ class AlkkagiEnv(gym.Env):
         
         # padding
         while len(obs) < self.num_agent_discs * 3:
-            obs.extend([0.0, 0.0, 2])
+            obs.extend([100000, 100000, 2])
         
         for disc in self.opponent_discs:
             pos = disc.position
@@ -220,33 +228,73 @@ class AlkkagiEnv(gym.Env):
                 [
                     (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
                     (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                    0
+                    1
                 ]
             )
 
         # padding
         while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
-            obs.extend([0.0, 0.0, 2])
+            obs.extend([100000, 100000, 2])
+        """
+        mask = self.get_action_mask_ver2()
+        for idx, disc in enumerate(self.discs):
+            pos = disc.position
+            if mask[idx]:
+                obs.extend(
+                    [
+                        (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
+                        (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
+                        idx // 5
+                    ]
+                )
+            else:
+                obs.extend(
+                    [
+                        (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
+                        (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
+                        2
+                    ]
+                )
 
         return np.array(obs, dtype=np.float32)
     
     def get_action_mask(self, who):
         if who == 0:
            mask = np.zeros(self.num_agent_discs, dtype=bool)
-           mask[:len(self.agent_discs)] = True
+           mask[:len()] = True
         else:
             mask = np.zeros(self.num_opponent_discs, dtype=bool)
             mask[:len(self.opponent_discs)] = True
         return mask
+
+    def get_action_mask_ver2(self):
+        mask = []
+        for disc in self.discs:
+            x, y = disc.position
+            if 0 <= x <= self.screen_width and 0 <= y <= self.screen_height:
+                mask.append(True)
+            else:
+                mask.append(False)
+        
+        return mask
+
     
     def _compute_reward(self, agent_before, opponent_before, who):
-        reward = - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
+        # reward = - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
+        # if who == 1:
+        #     reward = -reward
+        mask = self.get_action_mask_ver2()
+        reward = sum(mask[:self.num_agent_discs]) - agent_before - sum(mask[self.num_agent_discs:]) + opponent_before
         if who == 1:
             reward = -reward
         return reward
 
     def _check_done(self):
-        return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
+        mask = self.get_action_mask_ver2()
+        num_agent_discs = sum(mask[:self.num_agent_discs])
+        num_opponent_discs = sum(mask[self.num_agent_discs:])
+        # return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
+        return num_agent_discs == 0 or num_opponent_discs == 0
 
     def render(self, mode='human'):
         if self.screen is None:
