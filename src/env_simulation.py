@@ -2,7 +2,7 @@ import time
 from alkkagi_env import AlkkagiEnv
 import numpy as np
 
-env = AlkkagiEnv(num_agent_discs=4, num_opponent_discs= 4)
+env = AlkkagiEnv(num_discs_per_player = 5)
 obs = env.reset()
 
 action = np.array([0, 0.0, 0.0])  # 위쪽으로 힘 가함
