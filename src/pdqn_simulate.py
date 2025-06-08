@@ -76,5 +76,5 @@ def simulate():
     return tot_r
 
 if __name__ =="__main__":
-    for _ in range(50):
+    for _ in range(5):
         print(f"total return: {simulate():.1f}")

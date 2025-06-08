@@ -6,9 +6,9 @@ from pdqn_simulate import simulate
 # ───────────────────────── 하이퍼파라미터
 SEED            = 2025
 NUM_DISC        = 1            # 에이전트와 상대 디스크 수 (동일)
-EPISODES        = 50000
+EPISODES        = 1_000_000
 MAX_TURN  = 1                 # agent 턴 step 제한
-EPS_START, EPS_END, EPS_GAMMA = 1.0, 0.2, 0.998
+EPS_START, EPS_END, EPS_GAMMA = 1.0, 0.2, 0.9998
 TIME_PAST_REWARD = -0.0
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -19,6 +19,8 @@ env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
 obs_flat = env.reset(random=True).astype(np.float32).flatten()
 agent = PDQNAgent(obs_flat.size, NUM_DISC,
                   batch_size=256, device=DEVICE)
+
+
 
 def naive_opponent(mask):
     """간단한 랜덤 상대(학습 초기에 난이도 낮춤)."""
@@ -34,7 +36,7 @@ a_rewards = []
 o_rewards = []
 avgs = []
 for ep in range(1, EPISODES + 1):
-    a_state, o_state = env.reset(random=False).flatten(), None
+    a_state, o_state = env.reset(random=True).flatten(), None
     o_idx, o_cont, o_valid, o_reward, o_done = None, None, None, None, False
     a_total_r, o_total_r, turn = 0, 0, 0
 
@@ -124,7 +126,15 @@ for ep in range(1, EPISODES + 1):
         eps = max(EPS_END, eps * EPS_GAMMA)
 
     
-print(avgs)
+# print(avgs)
+import matplotlib.pyplot as plt
+
+x = list(range(100, (len(avgs)+1 * 100), 100))
+plt.plot(x, avgs)
+plt.title("1 vs 1")
+plt.xlabel("Episode Num")
+plt.ylabel("Average Rewards")
+plt.savefig("plot.png")
 # torch.save(agent.actor.state_dict(),  "ckpt/pdqn_actor.pth")
 # torch.save(agent.critic.state_dict(), "ckpt/pdqn_critic.pth")
 

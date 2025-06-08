@@ -173,6 +173,7 @@ class PDQNAgent:
             new_args[2] = transformed_action
 
             self.replay.push(*new_args)
+        # self.replay.push(*args)
 
     # 타깃 네트워크 soft-update
     def _soft_update(self, net, tgt):
