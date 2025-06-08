@@ -4,7 +4,6 @@ import numpy as np
 import pymunk
 import pymunk.pygame_util
 import pygame
-import math
 
 class AlkkagiEnv(gym.Env):
 
@@ -154,20 +153,42 @@ class AlkkagiEnv(gym.Env):
         return [d.index for d in self.discs if d.team == who and not d.removed]
 
     
-    def _compute_reward(self, who):
-    # 승리 조건: 상대 돌이 모두 제거됨
-        if self._check_done():
-            all_agent_out = all(d.removed for d in self.discs if d.team == 0)
-            all_opponent_out = all(d.removed for d in self.discs if d.team == 1)
+    def _compute_reward(self, obs, obs_before, who):
+        reward = 0.0
 
-            if who == 0 and all_opponent_out:
-                return 1.0
-            elif who == 1 and all_agent_out:
-                return 1.0
+        def extract_disc_info(obs_tuple):
+            # obs[i] = ((x, y), team, removed)
+            return [((x, y), team, removed) for (x, y), team, removed in obs_tuple]
+
+        current = extract_disc_info(obs)
+        before = extract_disc_info(obs_before)
+
+        moved_opponent = 0
+        removed_opponent = 0
+        removed_ally = 0
+
+        for cur, prev in zip(current, before):
+            pos_cur, team, removed_cur = cur
+            pos_prev, _, removed_prev = prev
+
+            if team != who:
+                # 움직임 판단 (위치 변화량 기준)
+                movement = np.linalg.norm(np.array(pos_cur) - np.array(pos_prev))
+                if movement > 1e-3:
+                    moved_opponent += 1
+
+                # 나감 판정: 이전에 안 나갔고 지금 나갔으면
+                if not removed_prev and removed_cur:
+                    removed_opponent += 1
             else:
-                return 0.0
-        else:
-            return 0.0
+                if not removed_prev and removed_cur:
+                    removed_ally += 1
+
+        reward += 0.1 * moved_opponent
+        reward += 1.0 * removed_opponent
+        reward += -1.0 * removed_ally
+
+        return reward
 
 
     def _check_done(self):
