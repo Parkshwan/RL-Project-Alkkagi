@@ -9,51 +9,38 @@ import math
 class AlkkagiEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, num_agent_discs=1, num_opponent_discs=1):
+    def __init__(self, num_discs_per_player=1):
         super(AlkkagiEnv, self).__init__()
         self.screen_width = 600
         self.screen_height = 600
         self.agent_radius = 15
         self.max_force = 1000
 
-        self.num_agent_discs = num_agent_discs
-        self.num_opponent_discs = num_opponent_discs
+        self.num_discs_per_player = num_discs_per_player
+        self.num_total_discs = 2 * num_discs_per_player
         self.discs = []
-        self.agent_discs = []
-        self.opponent_discs = []
 
-        # 관측 공간: (x, y, team) * (num_agent + num_opponent)
-        single_space = spaces.Tuple(
-            (
-                spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32), # pos
-                spaces.Discrete(3) # 0 agent, 1 opponent, 2 outed
-            )
-        )
-        self.observation_space = spaces.Tuple([single_space] * (self.num_agent_discs + self.num_opponent_discs))
+        single_space = spaces.Tuple((
+            spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32),  # pos
+            spaces.Discrete(2),  # 0 agent, 1 opponent
+            spaces.Discrete(2),  # 0 not removed, 1 removed
+        ))
+        self.observation_space = spaces.Tuple([single_space] * self.num_total_discs)
 
-        # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정
-        self.action_space = spaces.Tuple(
-            (
-                spaces.Discrete(self.num_agent_discs), # disc index
-                spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # (x, y) 방향 힘 (before scaling)
-            )
-        )
+        self.action_space = spaces.Tuple((
+            spaces.Discrete(self.num_total_discs),
+            spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
+        ))
 
-        # pymunk physics
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
+        self.space.damping = 0.6
 
-        # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.6  # 1.0이면 감속 없음
-
-        # pygame rendering
         self.screen = None
         self.clock = None
         self.draw_options = None
 
-        # self.reset()
-
-    def _add_disc(self, position):
+    def _add_disc(self, position, index, team):
         mass = 1
         radius = self.agent_radius
         inertia = pymunk.moment_for_circle(mass, 0, radius)
@@ -61,29 +48,26 @@ class AlkkagiEnv(gym.Env):
         body.position = position
         shape = pymunk.Circle(body, radius)
         shape.elasticity = 0.7
+        
+        body.index = index
+        body.team = team
+        body.removed = False
+        
         self.space.add(body, shape)
         self.discs.append(body)
 
         return body
 
     def _remove_out_of_bounds_discs(self):
-        new_discs = []
         for disc in self.discs:
+            if disc.removed: continue
+            
             x, y = disc.position
-            if 0 <= x <= self.screen_width and 0 <= y <= self.screen_height:
-                new_discs.append(disc)
-            else:
+            if not (0 <= x <= self.screen_width and 0 <= y <= self.screen_height):
                 for shape in disc.shapes:
                     self.space.remove(shape)
                 self.space.remove(disc)
-
-                # remove disc in agent/opponent list
-                if disc in self.agent_discs:
-                    self.agent_discs.remove(disc)
-                elif disc in self.opponent_discs:
-                    self.opponent_discs.remove(disc)
-                    
-        self.discs = new_discs
+                disc.removed = True
     
     def _all_discs_stopped(self, threshold=5.0):
         all_stopped = True
@@ -98,67 +82,49 @@ class AlkkagiEnv(gym.Env):
                 all_stopped = False
         return all_stopped
 
-    def reset(self):
-        # pymunk physics
-        self.space = pymunk.Space()
+    def reset(self, fixed=False):
+        self.space = pymunk.Space()  # 충돌 방지 위해 space도 새로 생성
         self.space.gravity = (0, 0)
-
-        # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.6  # 1.0이면 감속 없음
-
-        self.discs = []
-        self.agent_discs = []
-        self.opponent_discs = []
-
-        spacing = 2 * self.agent_radius + 5
-
-        # Add agent's discs
-        for i in range(self.num_agent_discs):
-            x = self.screen_width // 2 + (i - self.num_agent_discs // 2) * spacing
-            y = self.screen_height - 100
-            disc = self._add_disc((x, y)) # add to discs list
-            self.agent_discs.append(disc) # add to agent_discs list
+        self.space.damping = 0.6
+        self.discs = []  # 이전 디스크 초기화
         
-        # Add opponent's discs
-        for i in range(self.num_opponent_discs):
-            x = self.screen_width // 2 + (i - self.num_opponent_discs // 2) * spacing
-            y = 100
-            disc = self._add_disc((x, y))
-            self.opponent_discs.append(disc)
+        radius = self.agent_radius
+        spacing = 2 * radius + 5
+
+        def random_position(team):
+            attempts = 0
+            while attempts < 100:
+                x = np.random.uniform(radius, self.screen_width - radius)
+                y_range = (radius, self.screen_height / 2 - radius) if team == 1 else (self.screen_height / 2 + radius, self.screen_height - radius)
+                y = np.random.uniform(*y_range)
+                pos = (x, y)
+                if all(np.linalg.norm(np.array(pos) - np.array(d.position)) >= spacing for d in self.discs):
+                    return pos
+                attempts += 1
+            raise ValueError("Failed to find non-overlapping position")
+
+        indices = np.random.permutation(self.num_total_discs)
+
+        for i in range(self.num_total_discs):
+            team = 0 if i < self.num_discs_per_player else 1
+            if fixed:
+                x = self.screen_width // 2 + ((i % self.num_discs_per_player) - self.num_discs_per_player // 2) * spacing
+                y = self.screen_height - 100 if team == 0 else 100
+                pos = (x, y)
+            else:
+                pos = random_position(team)
+            self._add_disc(pos, index=int(indices[i]), team=team)
 
         return self._get_obs()
 
     def step(self, action, who):
-        # whose turn?
-        if who == 0:
-            moving_discs = self.agent_discs
-        else:
-            moving_discs = self.opponent_discs
+        target_index = int(action[0])
+        direction = np.clip(action[1], -1, 1) * self.max_force
+
+        target = next((d for d in self.discs if d.index == target_index),None)
+
+        target.apply_impulse_at_local_point(direction, (0, 0))
         
-        disc_index = int(action[0])
-        force = (
-            np.clip(action[1], -1, 1) * self.max_force,
-            np.clip(action[2], -1, 1) * self.max_force
-        )
-
-        # if invalid index input, just ignore
-        if disc_index >= len(moving_discs) or disc_index < 0:
-            if who == 1:
-                print("INVALID CHOICE FLAG")
-                print(disc_index)
-            obs   = self._get_obs()
-            reward = -1.0
-            done   = False
-            info   = {"invalid_action": True,
-                        "action_mask": self.get_action_mask(who)}
-            return obs, reward, done, info
-
-        agent_before = len(self.agent_discs)
-        opponent_before = len(self.opponent_discs)
-
-        moving_disc = moving_discs[disc_index]
-        moving_disc.apply_impulse_at_local_point(force, (0, 0))
-
         while True:
             self.render()
             self.space.step(1 / 60.0)
@@ -169,62 +135,45 @@ class AlkkagiEnv(gym.Env):
         self._remove_out_of_bounds_discs()
 
         obs = self._get_obs()
-        reward = self._compute_reward(agent_before, opponent_before)
+        reward = self._compute_reward()
         done = self._check_done()
-        mask = self.get_action_mask(who)
-        info = {"action_mask": mask}
-        
+        info = {"action_mask": self.get_action_mask(who)}
         return obs, reward, done, info
 
     def _get_obs(self):
         obs = []
-        for disc in self.agent_discs:
-            pos = disc.position
-            obs.extend(
-                [
-                    (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
-                    (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                    0
-                ]
+        sorted_discs = sorted(self.discs, key=lambda d: d.index)
+        for disc in sorted_discs:
+            pos = (
+                (disc.position[0] - self.screen_width / 2) / (self.screen_width / 2),
+                (disc.position[1] - self.screen_height / 2) / (self.screen_height / 2),
             )
-        
-        # padding
-        while len(obs) < self.num_agent_discs * 3:
-            obs.extend([0.0, 0.0, 2])
-        
-        for disc in self.opponent_discs:
-            pos = disc.position
-            obs.extend(
-                [
-                    (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
-                    (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                    0
-                ]
-            )
-
-        # padding
-        while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
-            obs.extend([0.0, 0.0, 2])
-
+            obs.extend([pos[0], pos[1], disc.team, int(disc.removed)])
         return np.array(obs, dtype=np.float32)
+
+
     
     def get_action_mask(self, who):
-        if who == 0:
-           mask = np.zeros(self.num_agent_discs, dtype=bool)
-           mask[:len(self.agent_discs)] = True
-        else:
-            mask = np.zeros(self.num_opponent_discs, dtype=bool)
-            mask[:len(self.opponent_discs)] = True
+        mask = np.zeros(self.num_total_discs, dtype=bool)
+
+        for d in self.discs:
+            if d.team == who and not d.removed:
+                mask[d.index] = True
         return mask
+
     
-    def _compute_reward(self, agent_before, opponent_before):
-        # reward = num(removed opponent) - num(removed agent)
-        return - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
+    def _compute_reward(self):
+        num_agent_removed = sum(1 for d in self.discs if d.team == 0 and d.removed)
+        num_opponent_removed = sum(1 for d in self.discs if d.team == 1 and d.removed)
+        return num_opponent_removed - num_agent_removed
+
 
     def _check_done(self):
-        return len(self.agent_discs) == 0 or len(self.opponent_discs) == 0
+        all_agent_out = all(d.removed for d in self.discs if d.team == 0)
+        all_opponent_out = all(d.removed for d in self.discs if d.team == 1)
+        return all_agent_out or all_opponent_out
 
-    def render(self, mode='human'):
+    def render(self):
         if self.screen is None:
             pygame.init()
             self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
@@ -237,29 +186,14 @@ class AlkkagiEnv(gym.Env):
                 exit()
 
         self.screen.fill((255, 255, 255))
+        pygame.draw.rect(self.screen, (220, 220, 220), pygame.Rect(0, 0, self.screen_width, self.screen_height), width=5)
 
-        # 보드 경계 사각형 그리기
-        pygame.draw.rect(
-            self.screen,
-            (220, 220, 220),
-            pygame.Rect(0, 0, self.screen_width, self.screen_height),
-            width=5
-        )
-
-        for body in self.agent_discs:
+        for body in self.discs:
             for shape in body.shapes:
                 if isinstance(shape, pymunk.Circle):
                     pos = int(body.position.x), int(body.position.y)
                     radius = int(shape.radius)
-                    color = (255, 0, 0)
-                    pygame.draw.circle(self.screen, color, pos, radius)
-        for body in self.opponent_discs:
-            for shape in body.shapes:
-                if isinstance(shape, pymunk.Circle):
-                    pos = int(body.position.x), int(body.position.y)
-                    radius = int(shape.radius)
-
-                    color = (0, 0, 0)
+                    color = (20, 20, 20) if body.team == 0 else (235, 235, 235)
                     pygame.draw.circle(self.screen, color, pos, radius)
         pygame.display.flip()
         self.clock.tick(60)
