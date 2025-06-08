@@ -7,14 +7,13 @@ import pygame
 import math
 
 class AlkkagiEnv(gym.Env):
-    metadata = {'render.modes': ['human']}
 
     def __init__(self, num_discs_per_player=1):
         super(AlkkagiEnv, self).__init__()
         self.screen_width = 600
         self.screen_height = 600
         self.agent_radius = 15
-        self.max_force = 1000
+        self.max_force = 500
 
         self.num_discs_per_player = num_discs_per_player
         self.num_total_discs = 2 * num_discs_per_player
@@ -47,7 +46,7 @@ class AlkkagiEnv(gym.Env):
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
-        shape.elasticity = 0.7
+        shape.elasticity = 0.0
         
         body.index = index
         body.team = team
@@ -72,8 +71,10 @@ class AlkkagiEnv(gym.Env):
     def _all_discs_stopped(self, threshold=5.0):
         all_stopped = True
         for disc in self.discs:
+            if disc.removed: continue
+            
             speed = disc.velocity.length
-            # print(disc.velocity.length)
+
             if speed < threshold:
                 # threshold 이하이면 속도를 0으로 만들어 정지시킴
                 disc.velocity = pymunk.Vec2d(0, 0)
@@ -85,7 +86,7 @@ class AlkkagiEnv(gym.Env):
     def reset(self, fixed=False):
         self.space = pymunk.Space()  # 충돌 방지 위해 space도 새로 생성
         self.space.gravity = (0, 0)
-        self.space.damping = 0.6
+        self.space.damping = 0.5
         self.discs = []  # 이전 디스크 초기화
         
         radius = self.agent_radius
@@ -118,27 +119,25 @@ class AlkkagiEnv(gym.Env):
         return self._get_obs()
 
     def step(self, action, who):
-        target_index = int(action[0])
-        direction = np.clip(action[1], -1, 1) * self.max_force
+        target_index, direction = action
+        
+        force = tuple(d * self.max_force for d in direction)
 
         target = next((d for d in self.discs if d.index == target_index),None)
 
-        target.apply_impulse_at_local_point(direction, (0, 0))
+        target.apply_impulse_at_local_point(force, (0, 0))
         
         while True:
             self.render()
             self.space.step(1 / 60.0)
             self._remove_out_of_bounds_discs()
-            if self._all_discs_stopped(threshold=0.1):
+            if self._all_discs_stopped(threshold=5.0):
                 break
 
-        self._remove_out_of_bounds_discs()
-
         obs = self._get_obs()
-        reward = self._compute_reward()
+        reward = self._compute_reward(who)
         done = self._check_done()
-        info = {"action_mask": self.get_action_mask(who)}
-        return obs, reward, done, info
+        return obs, reward, done, {}
 
     def _get_obs(self):
         obs = []
@@ -148,24 +147,27 @@ class AlkkagiEnv(gym.Env):
                 (disc.position[0] - self.screen_width / 2) / (self.screen_width / 2),
                 (disc.position[1] - self.screen_height / 2) / (self.screen_height / 2),
             )
-            obs.extend([pos[0], pos[1], disc.team, int(disc.removed)])
-        return np.array(obs, dtype=np.float32)
-
+            obs.append(((pos[0], pos[1]), disc.team, int(disc.removed)))
+        return tuple(obs)
+    
+    def get_alive_stone_index(self, who):
+        return [d.index for d in self.discs if d.team == who and not d.removed]
 
     
-    def get_action_mask(self, who):
-        mask = np.zeros(self.num_total_discs, dtype=bool)
+    def _compute_reward(self, who):
+    # 승리 조건: 상대 돌이 모두 제거됨
+        if self._check_done():
+            all_agent_out = all(d.removed for d in self.discs if d.team == 0)
+            all_opponent_out = all(d.removed for d in self.discs if d.team == 1)
 
-        for d in self.discs:
-            if d.team == who and not d.removed:
-                mask[d.index] = True
-        return mask
-
-    
-    def _compute_reward(self):
-        num_agent_removed = sum(1 for d in self.discs if d.team == 0 and d.removed)
-        num_opponent_removed = sum(1 for d in self.discs if d.team == 1 and d.removed)
-        return num_opponent_removed - num_agent_removed
+            if who == 0 and all_opponent_out:
+                return 1.0
+            elif who == 1 and all_agent_out:
+                return 1.0
+            else:
+                return 0.0
+        else:
+            return 0.0
 
 
     def _check_done(self):
@@ -183,12 +185,15 @@ class AlkkagiEnv(gym.Env):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                exit()
+                raise SystemExit
 
         self.screen.fill((255, 255, 255))
         pygame.draw.rect(self.screen, (220, 220, 220), pygame.Rect(0, 0, self.screen_width, self.screen_height), width=5)
 
         for body in self.discs:
+            if body.removed:
+                continue
+            
             for shape in body.shapes:
                 if isinstance(shape, pymunk.Circle):
                     pos = int(body.position.x), int(body.position.y)
