@@ -10,7 +10,7 @@ Transition = namedtuple(
 
 # ───────────────────────── Replay Buffer
 class ReplayBuffer:
-    def __init__(self, capacity=5000):
+    def __init__(self, capacity=40000):
         self.buf = deque(maxlen=capacity)
     def push(self, *args): self.buf.append(Transition(*args))
     def sample(self, batch_size):
@@ -19,7 +19,7 @@ class ReplayBuffer:
     def __len__(self): return len(self.buf)
 
 # ───────────────────────── 네트워크
-def mlp(in_dim, out_dim, hidden=(256, 256)):
+def mlp(in_dim, out_dim, hidden=(64, 64, 64)):
     layers, d = [], in_dim
     for h in hidden:
         layers += [nn.Linear(d, h), nn.ReLU()]
@@ -60,7 +60,7 @@ class PDQNAgent:
     def __init__(self, s_dim, num_disc,
                  gamma=0.99, tau=5e-3,
                  actor_lr=1e-4, critic_lr=2e-4,
-                 batch_size=256, device="cpu"):
+                 batch_size=256, device="cpu", load=False):
         self.device = device
         self.num_disc = num_disc
         self.batch = batch_size
@@ -68,6 +68,9 @@ class PDQNAgent:
 
         self.actor  = Actor(s_dim, num_disc).to(device)
         self.critic = Critic(s_dim, num_disc).to(device)
+        if load == True:
+            self.actor.load_state_dict(torch.load("ckpt/pdqn_actor.pth",  map_location=device))
+            self.critic.load_state_dict(torch.load("ckpt/pdqn_critic.pth", map_location=device))
         self.t_actor  = copy.deepcopy(self.actor).eval()
         self.t_critic = copy.deepcopy(self.critic).eval()
 
@@ -75,7 +78,7 @@ class PDQNAgent:
         self.opt_c = torch.optim.Adam(self.critic.parameters(), critic_lr)
         self.replay = ReplayBuffer()
 
-    # ε-greedy 선택 (무효 디스크는 마스킹)
+    # ε-(len(self.opponent_discs) - opponent_before + 2 * (agent_before - len(self.agent_discs))) 선택 (무효 디스크는 마스킹)
     def act(self, state, valid_mask, epsilon):
         s = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         with torch.no_grad():
@@ -173,6 +176,7 @@ class PDQNAgent:
             new_args[2] = transformed_action
 
             self.replay.push(*new_args)
+        self.replay.push(*args)
 
     # 타깃 네트워크 soft-update
     def _soft_update(self, net, tgt):

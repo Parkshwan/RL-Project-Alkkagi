@@ -27,7 +27,7 @@ class AlkkagiEnv(gym.Env):
         single_space = spaces.Tuple(
             (
                 spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32), # pos
-                spaces.Discrete(3) # 0 agent, 1 opponent, 2 outed
+                spaces.Discrete(3) # 0 agent, 1 opponent, -1 dead
             )
         )
         self.observation_space = spaces.Tuple([single_space] * (self.num_agent_discs + self.num_opponent_discs))
@@ -212,7 +212,7 @@ class AlkkagiEnv(gym.Env):
         
         # padding
         while len(obs) < self.num_agent_discs * 3:
-            obs.extend([0.0, 0.0, 2])
+            obs.extend([0.0, 0.0, -1])
         
         for disc in self.opponent_discs:
             pos = disc.position
@@ -220,13 +220,13 @@ class AlkkagiEnv(gym.Env):
                 [
                     (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
                     (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                    0
+                    1
                 ]
             )
 
         # padding
         while len(obs) < (self.num_agent_discs + self.num_opponent_discs) * 3:
-            obs.extend([0.0, 0.0, 2])
+            obs.extend([0.0, 0.0, -1])
 
         return np.array(obs, dtype=np.float32)
     
@@ -240,9 +240,10 @@ class AlkkagiEnv(gym.Env):
         return mask
     
     def _compute_reward(self, agent_before, opponent_before, who):
-        reward = - (len(self.opponent_discs) - opponent_before + agent_before - len(self.agent_discs))
+        if who == 0:
+            reward = - (len(self.opponent_discs) - opponent_before + 1 * (agent_before - len(self.agent_discs)))
         if who == 1:
-            reward = -reward
+            reward = (1 * (len(self.opponent_discs) - opponent_before) + agent_before - len(self.agent_discs))
         return reward
 
     def _check_done(self):

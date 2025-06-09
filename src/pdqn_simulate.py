@@ -1,34 +1,9 @@
-"""
-학습 완료한 PDQN을 로드해 알까기 경기를 실시간 시뮬레이션-렌더링합니다.
-"""
-
 import time, argparse, torch, numpy as np
 from alkkagi_env import AlkkagiEnv
-from pdqn_agent  import Actor, Critic                       # 앞서 작성한 네트워크
+from pdqn_agent  import Actor, Critic
 
-# ───────────────────────── CLI
-parser = argparse.ArgumentParser()
-parser.add_argument("--episodes", type=int, default=5, help="Number of matches")
-parser.add_argument("--delay",    type=float, default=1, help="sec per frame")
-parser.add_argument("--gpu",      action="store_true", help="Force CUDA if available")
-parser.add_argument("--actor_path",  default="ckpt/pdqn_actor.pth")
-parser.add_argument("--critic_path", default="ckpt/pdqn_critic.pth")
-args = parser.parse_args()
 
-DEVICE = "cuda" if (args.gpu and torch.cuda.is_available()) else "cpu"
-
-# ───────────────────────── Env & NN 로드
-NUM_DISC = 5
-env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
-obs_dim = env.reset(random=False).size   # flatten() 전 길이
-
-actor  = Actor(obs_dim, NUM_DISC).to(DEVICE).eval()
-critic = Critic(obs_dim, NUM_DISC).to(DEVICE).eval()
-actor .load_state_dict(torch.load(args.actor_path,  map_location=DEVICE))
-critic.load_state_dict(torch.load(args.critic_path, map_location=DEVICE))
-env.close()                     # 다시 초기화할 예정
-
-def greedy_action(state, valid_mask):
+def greedy_action(state, valid_mask, actor, critic, DEVICE, NUM_DISC):
     """critic을 이용해 Q가 가장 큰 디스크를 골라 fully-greedy 행동 반환"""
     s = torch.tensor(state, dtype=torch.float32, device=DEVICE).unsqueeze(0)
     with torch.no_grad():
@@ -52,25 +27,35 @@ def naive_opponent(mask):
     valid = np.flatnonzero(mask)
     if len(valid) == 0: return None
     i = int(np.random.choice(valid))
-    fx, fy = np.random.uniform(-0.3, 0.3, 2)
+    fx, fy = np.random.uniform(-0.7, 0.7, 2)
     return np.array([i, fx, fy])
 
 # ───────────────────────── Simulation Loop
-for ep in range(1, args.episodes + 1):
+def simulate(actor_path, critic_path):
+    DEVICE = "cuda" if (torch.cuda.is_available()) else "cpu"
+    NUM_DISC = 5
+    env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
+    obs_dim = env.reset(random=False).size   # flatten() 전 길이
+
+    actor  = Actor(obs_dim, NUM_DISC).to(DEVICE).eval()
+    critic = Critic(obs_dim, NUM_DISC).to(DEVICE).eval()
+    actor .load_state_dict(torch.load(actor_path,  map_location=DEVICE))
+    critic.load_state_dict(torch.load(critic_path, map_location=DEVICE))
+    
     obs = env.reset(random=False).flatten()
     done, tot_r = False, 0.0
-    print(f"\n===== Match {ep} =====")
     env.render()
     
     while not done:
         mask = env.get_action_mask(0)
-        a_idx, a_cont = greedy_action(obs, mask)
+        a_idx, a_cont = greedy_action(obs, mask, actor, critic, DEVICE, NUM_DISC)
         obs, r, done, info = env.step(np.array([a_idx, *a_cont]), 0, True)
+        tot_r += r
+        tot_r -= 1
         obs = obs.flatten()
-        print(f"agent: {r}")
         time.sleep(1)
         
-        if done:
+        if done or NUM_DISC == 1:
             break
 
         # 간단한 상대 수
@@ -78,12 +63,15 @@ for ep in range(1, args.episodes + 1):
         if opp is not None:
             obs, r_opp, done, info = env.step(opp, 1, True)
             obs = obs.flatten()
-            print(f"opponent: {r_opp}")
         time.sleep(1)
 
         if done:
             break
-    
-    print(f"→ total return {tot_r:.1f}")
 
-env.close()
+    env.close()
+
+    return tot_r
+
+if __name__ =="__main__":
+    print(f"total return: {simulate("ckpt/5/pdqn_actor_50000.pth", f"ckpt/5/pdqn_critic_50000.pth"):.1f}")
+    # print(f"total return: {simulate("ckpt/2/pdqn_actor_1000000.pth", f"ckpt/2/pdqn_critic_1000000.pth"):.1f}")

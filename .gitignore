@@ -4,4 +4,4 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
-/ckpt/*.pth
+/ckpt/*
