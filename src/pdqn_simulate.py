@@ -44,16 +44,16 @@ def simulate():
     
     obs = env.reset(random=True).flatten()
     done, tot_r = False, 0.0
-    env.render()
+    # env.render()
     
     while not done:
         mask = env.get_action_mask(0)
         a_idx, a_cont = greedy_action(obs, mask, actor, critic, DEVICE, NUM_DISC)
-        obs, r, done, info = env.step(np.array([a_idx, *a_cont]), 0, True)
+        obs, r, done, info = env.step(np.array([a_idx, *a_cont]), 0)
         tot_r += r
         tot_r -= 0.0
         obs = obs.flatten()
-        time.sleep(1)
+        # time.sleep(1)
 
         if NUM_DISC == 1:
             done = True
@@ -64,9 +64,9 @@ def simulate():
         # 간단한 상대 수
         opp = naive_opponent(env.get_action_mask(1))
         if opp is not None:
-            obs, r_opp, done, info = env.step(opp, 1, True)
+            obs, r_opp, done, info = env.step(opp, 1)
             obs = obs.flatten()
-        time.sleep(1)
+        # time.sleep(1)
 
         if done:
             break
@@ -76,5 +76,4 @@ def simulate():
     return tot_r
 
 if __name__ =="__main__":
-    for _ in range(5):
-        print(f"total return: {simulate():.1f}")
+    print(f"total return: {simulate():.1f}")

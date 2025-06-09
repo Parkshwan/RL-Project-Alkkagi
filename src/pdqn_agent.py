@@ -173,11 +173,16 @@ class PDQNAgent:
         #     new_args[2] = transformed_action
 
         #     self.replay.push(*new_args)
-        if args[3] == 0: # case reward == 0 -> push to replay buffer 10%
-            if np.random.rand() < 0.1:
-                self.replay.push(*args)
-        else:
-            self.replay.push(*args)
+        # if args[3] == 0: # case reward == 0 -> push to replay buffer 10%
+        #     if np.random.rand() < 0.1:
+        #         self.replay.push(*args)
+
+        # # elif args[3] == -1:
+        # #     if np.random.rand() < 0.1:
+        # #         self.replay.push(*args)
+        # else:
+        #     self.replay.push(*args)
+        self.replay.push(*args)
 
     # 타깃 네트워크 soft-update
     def _soft_update(self, net, tgt):

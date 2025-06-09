@@ -220,7 +220,7 @@ class AlkkagiEnv(gym.Env):
                 [
                     (pos[0] - self.screen_width / 2) / (self.screen_width / 2),
                     (pos[1] - self.screen_height / 2) / (self.screen_height / 2),
-                    0
+                    1
                 ]
             )
 

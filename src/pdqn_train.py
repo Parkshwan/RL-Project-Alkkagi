@@ -30,6 +30,21 @@ def naive_opponent(mask):
     fx, fy = np.random.uniform(-0.3, 0.3, 2)   # 살살 친다
     return idx, np.array([fx, fy])
 
+def hueristic_oppoonent(obs):
+    obs = list(zip(*[iter(obs)] * 3))
+
+    opponent_discs = np.array([(info[0], info[1]) for idx, info in enumerate(obs) if idx < len(obs) //2 and info[2] !=2])
+    agent_discs = np.array([(info[0], info[1]) for idx, info in enumerate(obs) if idx >= len(obs) //2 and info[2] !=2])
+
+    dists = np.linalg.norm(opponent_discs[:, None] - agent_discs[None, :], axis=2)
+
+    i, j = np.unravel_index(np.argmin(dists), dists.shape)
+    direction_vector = agent_discs[j] - opponent_discs[i]
+
+    action = direction_vector / np.linalg.norm(direction_vector)
+
+    return i, action
+
 # ───────────────────────── 학습 루프
 eps = EPS_START
 a_rewards = []
@@ -58,14 +73,6 @@ for ep in range(1, EPISODES + 1):
             o_state = np.concatenate([state[NUM_DISC*3:],state[:NUM_DISC*3]]) # moving discs should be in front
         else:
             if o_state is not None:
-                # # done and opponent lost
-                # if len(env.opponent_discs) == 0:
-                #     o_reward -= 10
-                #     o_total_r -= 10
-                # # done and opponent won
-                # else:
-                #     o_reward += 10
-                #     o_total_r += 10
                 agent.push(o_state, o_idx, o_cont, o_reward,
                         a_state, o_done, o_valid)
             break
@@ -75,6 +82,7 @@ for ep in range(1, EPISODES + 1):
             o_valid = env.get_action_mask(1)
             o_idx, o_cont = agent.act(o_state, o_valid, eps)
             # o_idx, o_cont = naive_opponent(o_valid)
+            # o_idx, o_cont = hueristic_oppoonent(obs=o_state)
             state, o_reward, o_done, _ = env.step(
                 np.array([o_idx, *o_cont]), 1
             )
@@ -114,12 +122,13 @@ for ep in range(1, EPISODES + 1):
         torch.save(agent.actor.state_dict(),  "ckpt/pdqn_actor.pth")
         torch.save(agent.critic.state_dict(), "ckpt/pdqn_critic.pth")
         print(f"[Ep {ep:4d}] checkpoint saved")
-        # if sum(a_rewards)/len(a_rewards) > 0.6:
-        #     for _ in range(10):
-        #         print(f"[Ep {ep:4d}] simulation result: {simulate():.1f}")
+        avg = 0
+        for _ in range(50):
+            avg += simulate()
+        avgs.append(avg/50)
+        
 
     if ep % 100 == 0:
-        avgs.append(sum(a_rewards)/len(a_rewards))
         print(f"[Ep {ep:4d}] agent return {sum(a_rewards)/len(a_rewards):6.2f} | opponent return {sum(o_rewards)/len(o_rewards):6.2f} | ε {eps:.3f}")
         a_rewards = []
         o_rewrads = []
@@ -128,14 +137,27 @@ for ep in range(1, EPISODES + 1):
     
 # print(avgs)
 import matplotlib.pyplot as plt
+import pandas as pd
 
-x = list(range(100, (len(avgs)+1 * 100), 100))
+x = list(range(1000, (len(avgs)+1) * 1000, 1000))
 plt.plot(x, avgs)
-plt.title("1 vs 1")
+plt.title("1 vs 1.Vanila")
 plt.xlabel("Episode Num")
 plt.ylabel("Average Rewards")
-plt.savefig("plot.png")
+plt.savefig("plot1.png")
 # torch.save(agent.actor.state_dict(),  "ckpt/pdqn_actor.pth")
 # torch.save(agent.critic.state_dict(), "ckpt/pdqn_critic.pth")
+
+# data saving
+import pandas as pd
+
+# DataFrame으로 변환
+df = pd.DataFrame({
+    'episode': range(100, (len(avgs)+1) * 100, 100),
+    'reward': avgs
+})
+
+# CSV로 저장
+df.to_csv('1vs1_vanila.csv', index=False)
 
 env.close()
