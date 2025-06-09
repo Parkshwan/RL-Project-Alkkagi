@@ -16,14 +16,14 @@ class Actor(nn.Module):
 
         # Encoder for each disc
         self.encoder = nn.Sequential(
-            nn.Linear(self.per_disc_dim, 16),
+            nn.Linear(self.per_disc_dim, 32),
             nn.ReLU(),
-            nn.Linear(16, 16),
+            nn.Linear(32, 32),
         )
 
         # Aggregation
         self.head = nn.Sequential(
-            nn.Linear(16 * num_total_discs, 128),
+            nn.Linear(32 * num_total_discs, 128),
             nn.ReLU(),
             nn.Linear(128, 2 * num_total_discs),  # fx, fy for each disc
             nn.Tanh()  # output range: (-1, 1)
@@ -47,9 +47,9 @@ class Critic(nn.Module):
 
         # Encoder for each disc
         self.encoder = nn.Sequential(
-            nn.Linear(self.per_disc_dim, 16),
+            nn.Linear(self.per_disc_dim, 32),
             nn.ReLU(),
-            nn.Linear(16, 16),
+            nn.Linear(32, 32),
         )
 
         # Action encoder: one-hot(index) + fx + fy
@@ -61,7 +61,7 @@ class Critic(nn.Module):
 
         # Q-value network
         self.q_net = nn.Sequential(
-            nn.Linear(16 * num_total_discs + 64, 128),
+            nn.Linear(32 * num_total_discs + 64, 128),
             nn.ReLU(),
             nn.Linear(128, 1)
         )
@@ -91,7 +91,7 @@ class PDQNAgent:
         actor_lr=1e-4,
         critic_lr=1e-3,
         buffer_size=100000,
-        batch_size=64,
+        batch_size=256,
         max_grad_norm=1.0
     ):
         self.device = device
@@ -121,7 +121,7 @@ class PDQNAgent:
         legal_indices: list of int
         """
         obs_tensor = torch.FloatTensor(obs_flat).unsqueeze(0).to(self.device)
-        action_output = self.actor(obs_tensor).squeeze(0).cpu().numpy()  # [2*num_total_discs]
+        action_output = self.actor(obs_tensor).squeeze(0).detach().cpu().numpy()  # [2*num_total_discs]
 
         # Random exploration: random index + random continuous action
         if random.random() < epsilon:

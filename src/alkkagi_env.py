@@ -7,7 +7,7 @@ import pygame
 
 class AlkkagiEnv(gym.Env):
 
-    def __init__(self, num_discs_per_player=1):
+    def __init__(self, num_discs_per_player=5, num_curriculum = -1, visualize = False, fixed = False):
         super(AlkkagiEnv, self).__init__()
         self.screen_width = 600
         self.screen_height = 600
@@ -16,7 +16,11 @@ class AlkkagiEnv(gym.Env):
 
         self.num_discs_per_player = num_discs_per_player
         self.num_total_discs = 2 * num_discs_per_player
+        self.num_curriculum = num_discs_per_player if (num_curriculum == -1) else num_curriculum
         self.discs = []
+        
+        self.visualize = visualize
+        self.fixed = fixed
 
         single_space = spaces.Tuple((
             spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32),  # pos
@@ -38,18 +42,18 @@ class AlkkagiEnv(gym.Env):
         self.clock = None
         self.draw_options = None
 
-    def _add_disc(self, position, index, team):
+    def _add_disc(self, position, index, team, removed):
         mass = 1
         radius = self.agent_radius
         inertia = pymunk.moment_for_circle(mass, 0, radius)
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
-        shape.elasticity = 0.0
+        shape.elasticity = 0.9
         
         body.index = index
         body.team = team
-        body.removed = False
+        body.removed = removed
         
         self.space.add(body, shape)
         self.discs.append(body)
@@ -82,7 +86,7 @@ class AlkkagiEnv(gym.Env):
                 all_stopped = False
         return all_stopped
 
-    def reset(self, fixed=False):
+    def reset(self):
         self.space = pymunk.Space()  # 충돌 방지 위해 space도 새로 생성
         self.space.gravity = (0, 0)
         self.space.damping = 0.5
@@ -107,34 +111,35 @@ class AlkkagiEnv(gym.Env):
 
         for i in range(self.num_total_discs):
             team = 0 if i < self.num_discs_per_player else 1
-            if fixed:
+            removed = 0 if i % self.num_discs_per_player < self.num_curriculum else 1
+            if self.fixed:
                 x = self.screen_width // 2 + ((i % self.num_discs_per_player) - self.num_discs_per_player // 2) * spacing
                 y = self.screen_height - 100 if team == 0 else 100
                 pos = (x, y)
             else:
                 pos = random_position(team)
-            self._add_disc(pos, index=int(indices[i]), team=team)
+            self._add_disc(pos, index=int(indices[i]), team=team, removed=removed)
 
         return self._get_obs()
 
     def step(self, action, who):
-        target_index, direction = action
+        obs_before = self._get_obs()
         
+        target_index, direction = action
         force = tuple(d * self.max_force for d in direction)
-
         target = next((d for d in self.discs if d.index == target_index),None)
-
         target.apply_impulse_at_local_point(force, (0, 0))
         
         while True:
-            self.render()
+            if self.visualize:
+                self.render()
             self.space.step(1 / 60.0)
             self._remove_out_of_bounds_discs()
             if self._all_discs_stopped(threshold=5.0):
                 break
 
         obs = self._get_obs()
-        reward = self._compute_reward(who)
+        reward = self._compute_reward(obs, obs_before, who)
         done = self._check_done()
         return obs, reward, done, {}
 
@@ -154,7 +159,7 @@ class AlkkagiEnv(gym.Env):
 
     
     def _compute_reward(self, obs, obs_before, who):
-        reward = 0.0
+        reward = -1.0
 
         def extract_disc_info(obs_tuple):
             # obs[i] = ((x, y), team, removed)
@@ -184,7 +189,7 @@ class AlkkagiEnv(gym.Env):
                 if not removed_prev and removed_cur:
                     removed_ally += 1
 
-        reward += 0.1 * moved_opponent
+        #reward += 0.1 * moved_opponent
         reward += 1.0 * removed_opponent
         reward += -1.0 * removed_ally
 
@@ -202,13 +207,16 @@ class AlkkagiEnv(gym.Env):
             self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
             self.clock = pygame.time.Clock()
             self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
-
+            self.board_img = pygame.image.load("img.png").convert()
+            self.board_img = pygame.transform.scale(self.board_img, (self.screen_width, self.screen_height))
+            
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 raise SystemExit
 
         self.screen.fill((255, 255, 255))
+        self.screen.blit(self.board_img, (0, 0))
         pygame.draw.rect(self.screen, (220, 220, 220), pygame.Rect(0, 0, self.screen_width, self.screen_height), width=5)
 
         for body in self.discs:

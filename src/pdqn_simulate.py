@@ -1,88 +1,88 @@
-"""
-학습 완료한 PDQN을 로드해 알까기 경기를 실시간 시뮬레이션-렌더링합니다.
-"""
-
-import time, argparse, torch, numpy as np
+import time
+import torch
+import numpy as np
 from alkkagi_env import AlkkagiEnv
-from pdqn_agent  import Actor, Critic                       # 앞서 작성한 네트워크
+from pdqn_agent import PDQNAgent
 
-# ───────────────────────── CLI
-parser = argparse.ArgumentParser()
-parser.add_argument("--episodes", type=int, default=5, help="Number of matches")
-parser.add_argument("--delay",    type=float, default=1, help="sec per frame")
-parser.add_argument("--gpu",      action="store_true", help="Force CUDA if available")
-parser.add_argument("--actor_path",  default="ckpt/pdqn_actor.pth")
-parser.add_argument("--critic_path", default="ckpt/pdqn_critic.pth")
-args = parser.parse_args()
+AGENT = 0
+OPPONENT = 1
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-DEVICE = "cuda" if (args.gpu and torch.cuda.is_available()) else "cpu"
+def flatten_obs(obs_tuple):
+    flat = []
+    for (x, y), team, removed in obs_tuple:
+        flat.extend([x, y, float(team), float(removed)])
+    return np.asarray(flat, dtype=np.float32)
 
-# ───────────────────────── Env & NN 로드
-NUM_DISC = 4
-env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
-obs_dim = env.reset().size   # flatten() 전 길이
+def heuristic_opponent(env):
+    own = [d for d in env.discs if d.team == 1 and not d.removed]
+    targ = [d for d in env.discs if d.team == 0 and not d.removed]
+    if len(own) == 0 or len(targ) == 0:
+        return None
 
-actor  = Actor(obs_dim, NUM_DISC).to(DEVICE).eval()
-critic = Critic(obs_dim, NUM_DISC).to(DEVICE).eval()
-actor .load_state_dict(torch.load(args.actor_path,  map_location=DEVICE))
-critic.load_state_dict(torch.load(args.critic_path, map_location=DEVICE))
-env.close()                     # 다시 초기화할 예정
+    shooter = np.random.choice(own)
+    nearest = min(targ, key=lambda d: np.linalg.norm(np.array(d.position) - np.array(shooter.position)))
+    vec = np.array(nearest.position) - np.array(shooter.position)
+    norm = np.linalg.norm(vec)
+    direction = vec / norm if norm > 1e-6 else np.random.uniform(-1, 1, 2)
+    direction += np.random.normal(0, 0.05, 2)
+    direction *= np.random.uniform(0.5, 0.8) / max(np.linalg.norm(direction), 1e-6)
+    direction = np.clip(direction, -1, 1)
+    return int(shooter.index), direction.astype(np.float32)
 
-def greedy_action(state, valid_mask):
-    """critic을 이용해 Q가 가장 큰 디스크를 골라 fully-greedy 행동 반환"""
-    s = torch.tensor(state, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-    with torch.no_grad():
-        params = actor(s)[0]                         # [num_disc,2]
-        q_vals = torch.full((NUM_DISC,), -1e9, device=DEVICE)
+def simulate_episode(num_discs_per_player = 5,  num_curriculum = 3, visualize=True):
+    env = AlkkagiEnv(
+        num_discs_per_player = num_discs_per_player, 
+        num_curriculum = num_curriculum, 
+        visualize=visualize, 
+        fixed=False
+    )
+    agent = PDQNAgent(num_total_discs=2, device=DEVICE)
+    agent.actor.load_state_dict(torch.load("ckpt/pdqn_actor.pth", map_location=DEVICE))
+    agent.actor.eval()
+    agent.critic.load_state_dict(torch.load("ckpt/pdqn_critic.pth", map_location=DEVICE))
+    agent.critic.eval()
 
-        for i in range(NUM_DISC):
-            if not valid_mask[i]:
-                continue
-            q = critic(
-                s,
-                torch.tensor([i], device=DEVICE),
-                params[i].unsqueeze(0)
-            )
-            q_vals[i] = q
-
-        idx = int(torch.argmax(q_vals).item())
-        return idx, params[idx].cpu().numpy()
-
-def naive_opponent(mask):
-    valid = np.flatnonzero(mask)
-    if len(valid) == 0: return None
-    i = int(np.random.choice(valid))
-    fx, fy = np.random.uniform(-0.3, 0.3, 2)
-    return np.array([i, fx, fy])
-
-# ───────────────────────── Simulation Loop
-for ep in range(1, args.episodes + 1):
-    obs = env.reset().flatten()
-    done, tot_r = False, 0.0
-    print(f"\n===== Match {ep} =====")
-    env.render(); time.sleep(1)
+    obs = env.reset()
+    state = flatten_obs(obs)
+    done = False
+    step = 1
     
+    env.render()
+    time.sleep(5)
+
     while not done:
-        mask = env.get_action_mask(0)
-        a_idx, a_cont = greedy_action(obs, mask)
-        obs, r, done, info = env.step(np.array([a_idx, *a_cont]), who=0)
-        obs = obs.flatten()
-        tot_r += r
-        time.sleep(1)     # 경기 결과 화면 1초 유지
-        
-        if done:
-            break
+        # Agent turn
+        legal = env.get_alive_stone_index(AGENT)
+        if legal:
+            idx, fx, fy = agent.select_action(state, legal, epsilon=0.0)
+            obs, reward, done, _ = env.step((idx, (fx, fy)), AGENT)
+            print(f"[Agent] Step {step} | idx={idx}, fx={fx:.2f}, fy={fy:.2f}, reward={reward:.2f}, done={done}")
+            step += 1
+            if visualize:
+                env.render()
+                time.sleep(0.7)
 
-        # 간단한 상대 수
-        opp = naive_opponent(env.get_action_mask(1))
-        if opp is not None:
-            obs, r_opp, done, info = env.step(opp, who=1)
-            obs = obs.flatten()
-        time.sleep(1)     # 경기 결과 화면 1초 유지
+        if done: break
 
-        if done:
-            break
-    
-    print(f"→ total return {tot_r:.1f}")
+        # Opponent turn
+        legal = env.get_alive_stone_index(OPPONENT)
+        if legal:
+            opp_action = heuristic_opponent(env)
+            if opp_action:
+                opp_idx, opp_dir = opp_action
+                obs, reward, done, _ = env.step((opp_idx, opp_dir), OPPONENT)
+                print(f"[Opponent] Step {step} | idx={opp_idx}, reward={reward:.2f}, done={done}")
+                step += 1
+                if visualize:
+                    env.render()
+                    time.sleep(0.7)
 
-env.close()
+        if done: break
+
+        state = flatten_obs(obs)
+
+    env.close()
+
+if __name__ == "__main__":
+    simulate_episode(num_discs_per_player = 1, num_curriculum = 1)
