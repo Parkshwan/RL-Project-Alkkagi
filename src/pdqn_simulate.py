@@ -4,7 +4,7 @@ from pdqn_agent  import Actor, Critic
 
 
 def greedy_action(state, valid_mask, actor, critic, DEVICE, NUM_DISC):
-    """critic을 이용해 Q가 가장 큰 디스크를 골라 fully-greedy 행동 반환"""
+    """Use critc to select the disc with the largest Q and return the fully-greedy behavior"""
     s = torch.tensor(state, dtype=torch.float32, device=DEVICE).unsqueeze(0)
     with torch.no_grad():
         params = actor(s)[0]                         # [num_disc,2]
@@ -30,12 +30,12 @@ def naive_opponent(mask):
     fx, fy = np.random.uniform(-0.7, 0.7, 2)
     return np.array([i, fx, fy])
 
-# ───────────────────────── Simulation Loop
+# simulation loop
 def simulate(actor_path, critic_path):
     DEVICE = "cuda" if (torch.cuda.is_available()) else "cpu"
     NUM_DISC = 5
     env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
-    obs_dim = env.reset(random=False).size   # flatten() 전 길이
+    obs_dim = env.reset(random=False).size
 
     actor  = Actor(obs_dim, NUM_DISC).to(DEVICE).eval()
     critic = Critic(obs_dim, NUM_DISC).to(DEVICE).eval()
@@ -58,7 +58,7 @@ def simulate(actor_path, critic_path):
         if done or NUM_DISC == 1:
             break
 
-        # 간단한 상대 수
+        # simple random opponent
         opp = naive_opponent(env.get_action_mask(1))
         if opp is not None:
             obs, r_opp, done, info = env.step(opp, 1, True)

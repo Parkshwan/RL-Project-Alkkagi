@@ -8,7 +8,7 @@ Transition = namedtuple(
     ("s", "a_idx", "a_cont", "r", "s2", "done", "valid_mask2")
 )
 
-# ───────────────────────── Replay Buffer
+# replay buffer
 class ReplayBuffer:
     def __init__(self, capacity=40000):
         self.buf = deque(maxlen=capacity)
@@ -18,7 +18,7 @@ class ReplayBuffer:
         return Transition(*zip(*batch))
     def __len__(self): return len(self.buf)
 
-# ───────────────────────── 네트워크
+# network
 def mlp(in_dim, out_dim, hidden=(64, 64, 64)):
     layers, d = [], in_dim
     for h in hidden:
@@ -29,7 +29,7 @@ def mlp(in_dim, out_dim, hidden=(64, 64, 64)):
 
 class Actor(nn.Module):
     """
-    상태 ─► 모든 디스크의 연속 파라미터 예측   [B, num_disc, 2]   ∈ (-1,1)
+    state ─► continuous parameters(force vector) for each disc
     """
     def __init__(self, s_dim, num_disc, param_dim=2):
         super().__init__()
@@ -37,12 +37,12 @@ class Actor(nn.Module):
         self.net = mlp(s_dim, num_disc * param_dim)
     def forward(self, s):
         out = self.net(s)
-        out = torch.tanh(out)                  # 값 범위 [-1,1]
-        return out.view(-1, self.num_disc, self.param_dim)
+        out = torch.tanh(out) # (-1, 1)
+        return out.view(-1, self.num_disc, self.param_dim) # [num_disc, 2]
 
 class Critic(nn.Module):
     """
-    (상태, one-hot 디스크 index, 파라미터) ─►  Q값  [B]
+    (state, disc index) ─► Q value
     """
     def __init__(self, s_dim, num_disc, param_dim=2):
         super().__init__()
@@ -50,12 +50,11 @@ class Critic(nn.Module):
         self.net = mlp(in_dim, 1)
         self.num_disc = num_disc
     def forward(self, s, a_idx, a_cont):
-        # s : [B,s_dim]    a_idx : [B] long   a_cont : [B,param_dim]
         one_hot = F.one_hot(a_idx, self.num_disc).float()
         x = torch.cat([s, one_hot, a_cont], dim=-1)
-        return self.net(x).squeeze(-1)         # [B]
+        return self.net(x).squeeze(-1) # [1]
 
-# ───────────────────────── PDQN Agent
+# PDQN Agent
 class PDQNAgent:
     def __init__(self, s_dim, num_disc,
                  gamma=0.99, tau=5e-3,
@@ -78,19 +77,20 @@ class PDQNAgent:
         self.opt_c = torch.optim.Adam(self.critic.parameters(), critic_lr)
         self.replay = ReplayBuffer()
 
-    # ε-(len(self.opponent_discs) - opponent_before + 2 * (agent_before - len(self.agent_discs))) 선택 (무효 디스크는 마스킹)
     def act(self, state, valid_mask, epsilon):
         s = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         with torch.no_grad():
             all_params = self.actor(s)[0].cpu().numpy()   # [num_disc,2]
-
+        
+        # exploration
         if np.random.rand() < epsilon:
             idxs = np.flatnonzero(valid_mask)
-            if len(idxs) == 0:           # 경기 끝 직전 보호
+            if len(idxs) == 0:
                 a_idx, a_cont = 0, np.zeros(2)
             else:
                 a_idx = int(np.random.choice(idxs))
                 a_cont = np.random.uniform(-1, 1, size=2)
+        # using model output
         else:
             qvals = []
             for i in range(self.num_disc):
@@ -129,7 +129,6 @@ class PDQNAgent:
                 F = flips[flip_axis]
                 M = F @ R
                 transforms.append(M)
-            # 중복 제거
             unique = []
             seen = set()
             for M in transforms:
@@ -178,12 +177,12 @@ class PDQNAgent:
             self.replay.push(*new_args)
         self.replay.push(*args)
 
-    # 타깃 네트워크 soft-update
+    # target soft-update
     def _soft_update(self, net, tgt):
         for p, tp in zip(net.parameters(), tgt.parameters()):
             tp.data.mul_(1 - self.tau); tp.data.add_(self.tau * p.data)
 
-    # 학습 1 step
+    # train 1 step
     def learn(self):
         if len(self.replay) < self.batch: return
         tr = self.replay.sample(self.batch)
@@ -196,7 +195,7 @@ class PDQNAgent:
         done= torch.tensor(tr.done,     device=self.device, dtype=torch.float32)
         mask2 = torch.tensor(tr.valid_mask2, device=self.device, dtype=torch.bool)
 
-        # ─ Critic update
+        # Critic update
         with torch.no_grad():
             next_params = self.t_actor(ns)           # [B,num_disc,2]
             q_next = torch.full((self.batch,), -1e9, device=self.device)
@@ -215,7 +214,7 @@ class PDQNAgent:
         loss_c = F.mse_loss(q_pred, y)
         self.opt_c.zero_grad(); loss_c.backward(); self.opt_c.step()
 
-        # ─ Actor update  (gradient ascent → -mean)
+        # Actor update  (gradient ascent → -mean)
         params = self.actor(s)                       # [B,num_disc,2]
         q_all = []
         for i in range(self.num_disc):

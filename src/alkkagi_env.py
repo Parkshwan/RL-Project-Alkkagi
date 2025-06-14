@@ -23,20 +23,20 @@ class AlkkagiEnv(gym.Env):
         self.agent_discs = []
         self.opponent_discs = []
         
-        # 관측 공간: (x, y, team) * (num_agent + num_opponent)
+        # Observation Space: (x, y, team) * (num_agent + num_opponent)
         single_space = spaces.Tuple(
             (
-                spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32), # pos
+                spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32), # x, y position
                 spaces.Discrete(3) # 0 agent, 1 opponent, -1 dead
             )
         )
         self.observation_space = spaces.Tuple([single_space] * (self.num_agent_discs + self.num_opponent_discs))
 
-        # 행동 공간: 각 step에 agent가 한 개의 디스크만 조작한다고 가정
+        # Action Space: Each step, pick one disk and flick with fx, fy
         self.action_space = spaces.Tuple(
             (
                 spaces.Discrete(self.num_agent_discs), # disc index
-                spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # (x, y) 방향 힘 (before scaling)
+                spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)  # (fx, fy) (will be scaled by multiplying max_force)
             )
         )
 
@@ -44,15 +44,13 @@ class AlkkagiEnv(gym.Env):
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
 
-        # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.2  # 1.0이면 감속 없음
+        # damping for friction
+        self.space.damping = 0.2
 
         # pygame rendering
         self.screen = None
         self.clock = None
         self.draw_options = None
-
-        # self.reset()
 
     def _add_disc(self, position):
         mass = 1
@@ -61,7 +59,6 @@ class AlkkagiEnv(gym.Env):
         body = pymunk.Body(mass, inertia)
         body.position = position
         shape = pymunk.Circle(body, radius)
-        # shape.friction = 0.5
         shape.elasticity = 0.5
         self.space.add(body, shape)
         self.discs.append(body)
@@ -91,9 +88,8 @@ class AlkkagiEnv(gym.Env):
         all_stopped = True
         for disc in self.discs:
             speed = disc.velocity.length
-            # print(disc.velocity.length)
             if speed < threshold:
-                # threshold 이하이면 속도를 0으로 만들어 정지시킴
+                # stop the disk when the velocity is less than threshold
                 disc.velocity = pymunk.Vec2d(0, 0)
                 disc.angular_velocity = 0
             else:
@@ -109,15 +105,15 @@ class AlkkagiEnv(gym.Env):
             y = random.randint(y_low + r, y_high - r)
             if all(math.hypot(x - px, y - py) >= 2 * r + margin for px, py in placed):
                 return x, y
-        raise RuntimeError("디스크 배치 실패: 공간이 부족합니다.")
+        raise RuntimeError("Failed adding disk")
 
     def reset(self, random=False):
         # pymunk physics
         self.space = pymunk.Space()
         self.space.gravity = (0, 0)
 
-        # 공간 전체에 약한 감속 적용
-        self.space.damping = 0.2  # 1.0이면 감속 없음
+        # damping for friction
+        self.space.damping = 0.2
 
         self.discs = []
         self.agent_discs = []
@@ -134,8 +130,8 @@ class AlkkagiEnv(gym.Env):
             else:
                 x, y = self._random_pos(self.screen_height // 2, self.screen_height, placed_xy)
             placed_xy.append((x, y))
-            disc = self._add_disc((x, y)) # add to discs list
-            self.agent_discs.append(disc) # add to agent_discs list
+            disc = self._add_disc((x, y))
+            self.agent_discs.append(disc)
         
         # Add opponent's discs
         for i in range(self.num_opponent_discs):
@@ -268,7 +264,6 @@ class AlkkagiEnv(gym.Env):
         self.screen.fill((255, 255, 255))
         self.screen.blit(self.board_img, (0, 0))
 
-        # 보드 경계 사각형 그리기
         pygame.draw.rect(
             self.screen,
             (220, 220, 220),

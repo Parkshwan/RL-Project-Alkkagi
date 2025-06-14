@@ -1,34 +1,34 @@
 import numpy as np, random, torch, time
-from alkkagi_env import AlkkagiEnv          # 사용자가 이미 업로드한 env
+from alkkagi_env import AlkkagiEnv
 from pdqn_agent import PDQNAgent
 from pdqn_simulate import simulate
 
-# ───────────────────────── 하이퍼파라미터
+# hyperparameters
 SEED            = 2025
-NUM_DISC        = 5            # 에이전트와 상대 디스크 수 (동일)
+NUM_DISC        = 5
 EPISODES        = 1000000
-MAX_TURN        = 20           # agent 턴 step 제한
+MAX_TURN        = 20
 EPS_START, EPS_END, EPS_GAMMA = 1.0, 0.2, 0.9985
 TIME_PAST_REWARD = -1
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 
-# ───────────────────────── Env & Agent 초기화
+# initialize environment and model
 env = AlkkagiEnv(num_agent_discs=NUM_DISC, num_opponent_discs=NUM_DISC)
 obs_flat = env.reset(random=False).astype(np.float32).flatten()
 agent = PDQNAgent(obs_flat.size, NUM_DISC,
                   batch_size=256, device=DEVICE, load=False)
 
 def naive_opponent(mask):
-    """간단한 랜덤 상대(학습 초기에 난이도 낮춤)."""
+    """Simple random opponent."""
     valid = np.flatnonzero(mask)
     if len(valid) == 0: return None
     idx = int(np.random.choice(valid))
-    fx, fy = np.random.uniform(-0.3, 0.3, 2)   # 살살 친다
+    fx, fy = np.random.uniform(-0.7, 0.7, 2) # relatively weak power
     return idx, np.array([fx, fy])
 
-# ───────────────────────── 학습 루프
+# training loop
 eps = EPS_START
 a_rewards = []
 o_rewards = []
@@ -38,7 +38,7 @@ for ep in range(1, EPISODES + 1):
     a_total_r, o_total_r, turn = 0, 0, 0
 
     while True:
-        # ─ Agent Turn
+        # agent turn
         if not o_done:
             a_valid = env.get_action_mask(0)
             a_idx, a_cont = agent.act(a_state, a_valid, eps)
@@ -59,11 +59,11 @@ for ep in range(1, EPISODES + 1):
                         a_state, o_done, o_valid)
             break
         
-        # ─ Opponent Turn
+        # opponent turn
         if not a_done:   
             o_valid = env.get_action_mask(1)
-            o_idx, o_cont = agent.act(o_state, o_valid, eps)
-            # o_idx, o_cont = naive_opponent(o_valid)
+            o_idx, o_cont = agent.act(o_state, o_valid, eps) # train with model-based opponent
+            # o_idx, o_cont = naive_opponent(o_valid) # train with simple random opponent
             state, o_reward, o_done, _ = env.step(
                 np.array([o_idx, *o_cont]), 1
             )
@@ -91,6 +91,7 @@ for ep in range(1, EPISODES + 1):
     a_rewards.append(a_total_r)
     o_rewards.append(o_total_r)
 
+    # printing result and decreasing epsilon(exploration rate)
     if ep % 1000 == 0:
         a_reward_avg = sum(a_rewards)/len(a_rewards)
         o_reward_avg = sum(o_rewards)/len(o_rewards)
@@ -99,6 +100,7 @@ for ep in range(1, EPISODES + 1):
         o_rewrads = []
         eps = max(EPS_END, eps * EPS_GAMMA)
 
+    # save checkpoint
     if ep % 10000 == 0:
         torch.save(agent.actor.state_dict(),  f"ckpt/5/pdqn_actor_{ep}.pth")
         torch.save(agent.critic.state_dict(), f"ckpt/5/pdqn_critic_{ep}.pth")
